@@ -1,28 +1,86 @@
-# NearTools — MVP with branding + per-browser login persistence (no shared file) + admin-only reset
-# Put your logo file as "logo.png" next to this file.
+# NearTools — polished MVP (cookie-stable login)
+# Features:
+# - Sign up / Log in (hashed passwords)
+# - Persistent login via secure cookies (per browser; not shared across visitors)
+# - Admin-only "Reset local database" button (hidden for others)
+# - List a Tool (photo, price/day, availability window, location, category, desc)
+# - Browse with job description + ranking (intent + ratings + popularity + availability)
+# - Universal job matching (any word typed will surface matching listings)
+# - Tool reviews (read in Browse; write in My Bookings)
+# - Bookings with date window + cost calc
+# - Clean branding + big logo hero
 
-import os, hashlib, sqlite3
-from datetime import date, datetime
+import os
+import re
+import hashlib
+import sqlite3
+from datetime import date, datetime, timedelta
 from typing import Optional, List, Tuple
 
 import streamlit as st
 import pandas as pd
-from streamlit_js_eval import streamlit_js_eval  # for localStorage per-browser
+from streamlit_cookies_manager import EncryptedCookieManager
 
+# ------------------ Branding ------------------
 APP_NAME = "NearTools"
-TAGLINE  = "Own less. Do more."
+TAGLINE   = "Own less. Do more."
 
-# <<< SET THIS TO YOUR EMAIL SO ONLY YOU SEE THE RESET BUTTON >>>
-ADMIN_EMAIL = "mauryatalluru@gmail.com"
+PALETTE = {
+    "green": "#2F6D3A",
+    "leaf": "#8FBF65",
+    "teal": "#23A094",
+    "orange": "#F59E0B",
+    "ink": "#1F2A1C",
+    "card": "#F0F3EE",
+    "bg": "#FAFAF7",
+}
 
-# ---------- Paths ----------
-DB_DIR = "data"
-DB_PATH = os.path.join(DB_DIR, "neartools.db")
+def inject_css():
+    st.markdown(f"""
+    <style>
+        html, body, [data-testid="stAppViewContainer"] {{
+            background: {PALETTE["bg"]};
+        }}
+        .hero {{
+            background: linear-gradient(90deg, {PALETTE["leaf"]}33 0%, {PALETTE["teal"]}33 50%, {PALETTE["orange"]}33 100%);
+            border: 1px solid #e7eadf;
+            border-radius: 24px;
+            padding: 18px 22px;
+            margin-bottom: 18px;
+        }}
+        .hero .title {{
+            font-weight: 900;
+            font-size: 2.1rem;
+            margin: 0;
+            color: {PALETTE["ink"]};
+        }}
+        .hero .tagline {{
+            margin: 2px 0 0 0;
+            font-size: 1.05rem;
+            color: #556355;
+        }}
+        .stButton>button {{
+            background: {PALETTE["green"]};
+            color: white; border-radius: 10px; border: 0;
+            padding: 0.55rem 0.9rem;
+        }}
+        .stButton>button:hover {{ background: {PALETTE["teal"]}; }}
+        .stTextInput>div>div>input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {{
+            background: white; border-radius: 10px; border: 1px solid #dfe4da;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
+
+# ------------------ Config ------------------
+ADMIN_EMAIL = "your.email@example.com"  # <- change to YOUR email for admin-only reset
+
+DB_DIR     = "data"
+DB_PATH    = os.path.join(DB_DIR, "neartools.db")
 IMAGES_DIR = "images"
 os.makedirs(DB_DIR, exist_ok=True)
 os.makedirs(IMAGES_DIR, exist_ok=True)
 
-# ---------- Schema ----------
+# ------------------ DB schema ------------------
 SCHEMA_SQL = """
 PRAGMA foreign_keys = ON;
 
@@ -75,7 +133,6 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 """
 
-# ---------- DB helpers ----------
 def get_conn():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -87,7 +144,7 @@ def init_db():
         conn.executescript(SCHEMA_SQL)
     conn.close()
 
-# ---------- Auth ----------
+# ------------------ Auth ------------------
 def hash_password(pw: str) -> str:
     salt = "neartools_salt_v1"
     return hashlib.sha256((salt + pw).encode()).hexdigest()
@@ -123,7 +180,7 @@ def get_user_by_email(email: str) -> Optional[sqlite3.Row]:
     finally:
         conn.close()
 
-# ---------- Tool & booking ops ----------
+# ------------------ Tool & booking ops ------------------
 def add_tool(owner_id: int, name: str, description: str, category: str, daily_price: float,
              location: str, available_from: Optional[date], available_to: Optional[date],
              image_bytes: Optional[bytes]) -> int:
@@ -137,16 +194,16 @@ def add_tool(owner_id: int, name: str, description: str, category: str, daily_pr
     with conn:
         cur = conn.execute(
             """
-            INSERT INTO tools(owner_id, name, description, category, daily_price, location, available_from, available_to, image_path, created_at)
+            INSERT INTO tools(owner_id, name, description, category, daily_price, location,
+                              available_from, available_to, image_path, created_at)
             VALUES(?,?,?,?,?,?,?,?,?,?)
             """,
             (
-                owner_id, name.strip(), description.strip(), category.strip(), float(daily_price),
-                location.strip(),
+                owner_id, name.strip(), (description or "").strip(), (category or "").strip(),
+                float(daily_price), location.strip(),
                 available_from.isoformat() if available_from else None,
                 available_to.isoformat() if available_to else None,
-                image_path,
-                datetime.utcnow().isoformat(),
+                image_path, datetime.utcnow().isoformat(),
             ),
         )
         tool_id = cur.lastrowid
@@ -154,19 +211,23 @@ def add_tool(owner_id: int, name: str, description: str, category: str, daily_pr
     return tool_id
 
 def list_tools(keyword: str = "", category: str = "", location: str = "") -> List[sqlite3.Row]:
-    kw = f"%{keyword.lower().strip()}%"
-    cat = f"%{category.lower().strip()}%" if category else "%"
-    loc = f"%{location.lower().strip()}%" if location else "%"
+    """SQL filter that now matches keyword against NAME **or DESCRIPTION** (case-insensitive)."""
+    kw  = f"%{(keyword or '').lower().strip()}%"
+    cat = f"%{(category or '').lower().strip()}%" if category else "%"
+    loc = f"%{(location or '').lower().strip()}%" if location else "%"
     conn = get_conn()
     try:
         cur = conn.execute(
             """
             SELECT t.*, u.name AS owner_name, u.email AS owner_email
             FROM tools t JOIN users u ON u.id = t.owner_id
-            WHERE lower(t.name) LIKE ? AND lower(IFNULL(t.category,'')) LIKE ? AND lower(t.location) LIKE ?
+            WHERE
+                (lower(t.name) LIKE ? OR lower(IFNULL(t.description,'')) LIKE ?)
+                AND lower(IFNULL(t.category,'')) LIKE ?
+                AND lower(t.location) LIKE ?
             ORDER BY t.created_at DESC
             """,
-            (kw, cat, loc),
+            (kw, kw, cat, loc),
         )
         return cur.fetchall()
     finally:
@@ -176,7 +237,8 @@ def tool_bookings(tool_id: int) -> List[Tuple[date, date]]:
     conn = get_conn()
     try:
         rows = conn.execute(
-            "SELECT start_date, end_date FROM bookings WHERE tool_id=? AND status='confirmed'", (tool_id,)
+            "SELECT start_date, end_date FROM bookings WHERE tool_id=? AND status='confirmed'",
+            (tool_id,)
         ).fetchall()
         return [(date.fromisoformat(r["start_date"]), date.fromisoformat(r["end_date"])) for r in rows]
     finally:
@@ -234,7 +296,7 @@ def add_review(tool_id: int, reviewer_id: int, rating: int, comment: str) -> Non
     with conn:
         conn.execute(
             "INSERT INTO reviews(tool_id, reviewer_id, rating, comment, created_at) VALUES(?,?,?,?,?)",
-            (tool_id, reviewer_id, int(rating), comment.strip(), datetime.utcnow().isoformat()),
+            (tool_id, reviewer_id, int(rating), (comment or "").strip(), datetime.utcnow().isoformat()),
         )
     conn.close()
 
@@ -253,57 +315,138 @@ def get_tool_reviews(tool_id: int) -> pd.DataFrame:
     finally:
         conn.close()
 
-# ---------- Branding ----------
-PALETTE = {
-    "green": "#2F6D3A",
-    "leaf": "#8FBF65",
-    "teal": "#23A094",
-    "orange": "#F59E0B",
-    "ink": "#1F2A1C",
-    "card": "#F0F3EE",
-    "bg": "#FAFAF7",
+# ------------------ Smart ranking helpers ------------------
+AI_HINTS = {
+    "paint": ["ladder", "paint sprayer", "roller", "drop cloth", "tarp", "brush"],
+    "ceiling": ["ladder", "roller", "paint sprayer"],
+    "mount tv": ["hammer drill", "drill", "stud finder", "level", "driver", "screwdriver"],
+    "concrete": ["hammer drill", "masonry", "impact"],
+    "build table": ["saw", "circular saw", "jigsaw", "drill", "sander", "clamps"],
+    "cut wood": ["saw", "circular saw", "jigsaw"],
+    "garden": ["hedge trimmer", "ladder"],
+    "hedge": ["hedge trimmer", "ladder"],
+    "bbq": ["grill", "barbeque", "barbecue"],
+    "pressure wash": ["pressure washer", "power washer", "hose"],
 }
 
-def inject_css():
-    st.markdown(f"""
-    <style>
-        html, body, [data-testid="stAppViewContainer"] {{
-            background: {PALETTE["bg"]};
-        }}
-        .hero {{
-            background: linear-gradient(90deg, {PALETTE["leaf"]}33 0%, {PALETTE["teal"]}33 50%, {PALETTE["orange"]}33 100%);
-            border: 1px solid #e7eadf;
-            border-radius: 24px;
-            padding: 18px 22px;
-            margin-bottom: 18px;
-        }}
-        .hero .title {{
-            font-weight: 900;
-            font-size: 2.1rem;
-            margin: 0;
-            color: {PALETTE["ink"]};
-        }}
-        .hero .tagline {{
-            margin: 2px 0 0 0;
-            font-size: 1.1rem;
-            color: #556355;
-        }}
-        .stButton>button {{
-            background: {PALETTE["green"]};
-            color: white;
-            border-radius: 10px;
-            padding: 0.6rem 0.9rem;
-            border: 0;
-        }}
-        .stButton>button:hover {{ background: {PALETTE["teal"]}; }}
-        div[data-baseweb="tab-list"] > div[aria-selected="true"]::after {{ background: {PALETTE["green"]}; }}
-        .stTextInput>div>div>input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {{
-            background: white; border-radius: 10px; border: 1px solid #dfe4da;
-        }}
-    </style>
-    """, unsafe_allow_html=True)
+def _tokenize(text: str) -> set[str]:
+    return set(w for w in re.findall(r"[a-z0-9]+", (text or "").lower()) if len(w) > 1)
 
-# ---------- UI helpers ----------
+def _expand_with_hints(tokens: set[str]) -> set[str]:
+    expanded = set(tokens)
+    for k, hints in AI_HINTS.items():
+        if k in tokens:
+            expanded.update(hints)
+    return expanded
+
+def _avg_rating_and_count(tool_id: int) -> tuple[float, int]:
+    df = get_tool_reviews(tool_id)
+    if df.empty:
+        return 0.0, 0
+    return float(df["rating"].mean()), int(len(df))
+
+def _recent_bookings_count(tool_id: int, days: int = 90) -> int:
+    conn = get_conn()
+    try:
+        cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        row = conn.execute(
+            "SELECT COUNT(*) AS c FROM bookings WHERE tool_id=? AND created_at >= ?",
+            (tool_id, cutoff),
+        ).fetchone()
+        return int(row["c"] or 0)
+    finally:
+        conn.close()
+
+def score_tool(tool: sqlite3.Row, job_text: str, start: Optional[date], end: Optional[date]) -> tuple[float, list[str]]:
+    reasons, score = [], 0.0
+
+    # Availability boost (if user chose dates)
+    if start and end:
+        if is_available(tool, start, end):
+            score += 3.0
+            reasons.append("available for your dates")
+        else:
+            return (-100.0, ["not available for selected dates"])
+
+    # Text match
+    if job_text:
+        job_tokens = _expand_with_hints(_tokenize(job_text))
+        hay = _tokenize(f"{tool['name']} {(tool['description'] or '')} {(tool['category'] or '')}")
+        overlap = job_tokens.intersection(hay)
+        if overlap:
+            score += min(5.0, 1.0 + 0.8 * len(overlap))
+            reasons.append("matches: " + ", ".join(list(overlap)[:3]))
+        else:
+            score -= 0.5
+
+    # Ratings
+    avg, cnt = _avg_rating_and_count(tool["id"])
+    if cnt > 0:
+        score += (avg - 3.0) * 0.8
+        reasons.append(f"{avg:.1f}⭐ from {cnt}")
+    else:
+        reasons.append("no reviews yet")
+
+    # Popularity
+    recent = _recent_bookings_count(tool["id"])
+    if recent > 0:
+        score += min(3.0, 0.5 + 0.4 * recent)
+        reasons.append(f"{recent} recent booking(s)")
+
+    return score, reasons
+
+def rank_tools(tools: list[sqlite3.Row], job_text: str, start, end) -> list[tuple[sqlite3.Row, float, list[str]]]:
+    ranked = []
+    for t in tools:
+        s, reasons = score_tool(t, job_text, start, end)
+        ranked.append((t, s, reasons))
+    ranked.sort(key=lambda x: x[1], reverse=True)
+    return ranked
+
+# ------------------ Universal job matcher ------------------
+def _simple_tokens(text: str) -> list[str]:
+    if not text:
+        return []
+    text = text.lower()
+    return re.findall(r"[a-z0-9]+", text)
+
+def _variants(word: str) -> set[str]:
+    v = {word}
+    if word.endswith("es"):
+        v.add(word[:-2])
+    if word.endswith("s") and len(word) > 3:
+        v.add(word[:-1])
+    if not word.endswith("s"):
+        v.add(word + "s")
+    return v
+
+_SYNONYMS = {
+    "bbq": {"barbecue", "barbeque", "grill"},
+    "barbecue": {"bbq", "barbeque", "grill"},
+    "barbeque": {"bbq", "barbecue", "grill"},
+    "lawnmower": {"mower"},
+    "mower": {"lawnmower"},
+    "weed": {"weedeater", "weedwhacker", "stringtrimmer", "trimmer"},
+    "trimmer": {"stringtrimmer", "strimmer"},
+}
+
+def _expand(words: list[str]) -> set[str]:
+    out = set()
+    for w in words:
+        out |= _variants(w)
+        if w in _SYNONYMS:
+            out |= _SYNONYMS[w]
+    return out
+
+def job_matches(tool: sqlite3.Row, job_text: str) -> bool:
+    """Universal, loose matcher so 'bat' matches 'cricket bat', 'grass' matches mower, etc."""
+    if not job_text or not job_text.strip():
+        return True
+    q_tokens = _expand(_simple_tokens(job_text))
+    hay_text = f"{tool['name']} {(tool['description'] or '')} {(tool['category'] or '')}".lower()
+    return any(tok in hay_text for tok in q_tokens if len(tok) >= 2)
+
+# ------------------ UI helpers ------------------
 def reviews_summary(tool_id: int) -> str:
     df = get_tool_reviews(tool_id)
     if df.empty:
@@ -313,60 +456,61 @@ def reviews_summary(tool_id: int) -> str:
 
 def tool_card(tool: sqlite3.Row):
     with st.container(border=True):
-        cols = st.columns([1, 2, 2])
-        with cols[0]:
+        c0, c1, c2 = st.columns([1, 2, 2])
+        with c0:
             if tool["image_path"] and os.path.exists(tool["image_path"]):
                 st.image(tool["image_path"], use_container_width=True)
             else:
                 st.write("🧰")
-        with cols[1]:
+        with c1:
             st.subheader(tool["name"])
             st.write(f"**Category:** {tool['category'] or '—'}  \n**Location:** {tool['location']}")
             st.write(tool["description"] or "No description.")
             st.write(f"**Daily price:** ${tool['daily_price']:.2f}")
             st.caption(reviews_summary(tool["id"]))
-        with cols[2]:
+        with c2:
             st.write(f"**Owner:** {tool['owner_name']}  \n**Email:** {tool['owner_email']}")
 
-# ---------- App ----------
+# ------------------ App ------------------
 def main():
     st.set_page_config(page_title=APP_NAME, page_icon="🧰", layout="wide")
     init_db()
     inject_css()
 
-    # Per-browser session state (not shared)
+    # ===== Cookie manager for persistent login (per browser) =====
+    cookies = EncryptedCookieManager(
+        prefix="neartools",
+        password="change_this_to_a_secret_string_1234567890",  # change to any random long string
+    )
+    if not cookies.ready():
+        st.stop()  # Wait until cookies are ready
+
+    # Restore user from cookie if present
     st.session_state.setdefault("user", None)
-
-    # Try to auto-restore from this browser's localStorage (NOT shared with others)
-    try:
-        saved_email = streamlit_js_eval(js_expressions="localStorage.getItem('neartools_user')", key="get_saved_user")
-    except Exception:
-        saved_email = None
-
-    if st.session_state["user"] is None and saved_email:
+    saved_email = (cookies.get("user_email") or "").strip()
+    if saved_email and not st.session_state["user"]:
         row = get_user_by_email(saved_email)
         if row:
             st.session_state["user"] = dict(row)
 
-    # Big landing hero with large logo + tagline
-    logo_col, text_col = st.columns([1, 5], vertical_alignment="center")
-    with logo_col:
+    # ===== Hero =====
+    left, right = st.columns([1, 5], vertical_alignment="center")
+    with left:
         if os.path.exists("logo.png"):
             st.image("logo.png", use_container_width=True)
         else:
             st.write("🧰")
-    with text_col:
+    with right:
         st.markdown(
             f"""
             <div class="hero">
                 <div class="title">{APP_NAME}</div>
                 <div class="tagline">{TAGLINE}</div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """, unsafe_allow_html=True
         )
 
-    # Sidebar (logo, tagline, auth)
+    # ===== Sidebar: auth + admin reset =====
     with st.sidebar:
         if os.path.exists("logo.png"):
             st.image("logo.png", use_container_width=True)
@@ -375,42 +519,41 @@ def main():
 
         if st.session_state.get("user"):
             st.success(f"Logged in as {st.session_state['user']['name']}")
-            if st.button("Log out"):
-                st.session_state["user"] = None
-                # Clear only this browser's localStorage
+
+            # --- reliable logout ---
+            if st.button("Log out", key="logout_btn"):
+                st.session_state.pop("user", None)
                 try:
-                    streamlit_js_eval(js_expressions="localStorage.removeItem('neartools_user')", key="logout_clear")
-                except Exception:
-                    pass
+                    cookies["user_email"] = ""   # blank value prevents auto-restore
+                    cookies.save()
+                except Exception as e:
+                    st.warning(f"Could not update cookies: {e}")
+                st.toast("You’ve been logged out.", icon="✅")
                 st.rerun()
+
         else:
             login_tab, signup_tab = st.tabs(["Log in", "Sign up"])
+
             with login_tab:
                 l_email = st.text_input("Email", key="login_email")
-                l_pw = st.text_input("Password", type="password", key="login_pw")
-                keep = st.checkbox("Keep me signed in on this browser", value=True)
+                l_pw    = st.text_input("Password", type="password", key="login_pw")
                 if st.button("Log in"):
                     u = verify_user(l_email, l_pw)
                     if u:
                         st.session_state["user"] = dict(u)
-                        if keep:
-                            # Save only in THIS browser (not server disk)
-                            try:
-                                streamlit_js_eval(
-                                    js_expressions=f"localStorage.setItem('neartools_user', '{l_email.lower().strip()}')",
-                                    key="login_save")
-                            except Exception:
-                                pass
+                        cookies["user_email"] = l_email.lower().strip()
+                        cookies.save()
                         st.success("Logged in!")
                         st.rerun()
                     else:
                         st.error("Invalid email or password.")
+
             with signup_tab:
-                s_name = st.text_input("Full name")
+                s_name  = st.text_input("Full name")
                 s_email = st.text_input("Email")
-                s_loc = st.text_input("Location (City or ZIP)")
-                s_pw1 = st.text_input("Password", type="password", key="pw1")
-                s_pw2 = st.text_input("Confirm password", type="password", key="pw2")
+                s_loc   = st.text_input("Location (City or ZIP)")
+                s_pw1   = st.text_input("Password", type="password", key="pw1")
+                s_pw2   = st.text_input("Confirm password", type="password", key="pw2")
                 if st.button("Create account"):
                     if not (s_name and s_email and s_pw1 and s_pw2):
                         st.error("Please fill all fields.")
@@ -421,7 +564,7 @@ def main():
                         (st.success if ok else st.error)(msg)
 
         st.divider()
-        # Admin-only Reset DB (hidden from everyone else)
+        # Admin-only DB reset
         if st.session_state.get("user") and st.session_state["user"]["email"] == ADMIN_EMAIL:
             if st.button("🗑 Reset local database (admin)"):
                 try:
@@ -432,35 +575,64 @@ def main():
                 except Exception as e:
                     st.error(f"Could not reset DB: {e}")
 
-    # Main tabs
-    tabs = st.tabs(["Browse", "List a Tool", "My Bookings"])
+    # ===== Tabs =====
+    tab_browse, tab_list, tab_book = st.tabs(["Browse", "List a Tool", "My Bookings"])
 
-    # -------- Browse --------
-    with tabs[0]:
+    # -------- Browse (universal matching + smart ranking) --------
+    with tab_browse:
         st.subheader("Find tools near you")
-        c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
+        c1, c2, c3, c4 = st.columns([2.6, 2, 2, 2.6])
         with c1:
-            keyword = st.text_input("Keyword (e.g., drill, sander)")
+            job_text = st.text_input("Describe your job (optional)",
+                                     placeholder="e.g., Paint ceiling; Mount TV; Build a small table…")
         with c2:
-            category = st.selectbox("Category (optional)", ["", "drill", "ladder", "saw", "sewing machine", "sander", "pressure washer"])
+            category = st.selectbox("Category (optional)",
+                                    ["", "drill", "ladder", "saw", "sewing machine", "sander", "pressure washer"])
         with c3:
             location = st.text_input("Location filter (optional)")
         with c4:
-            st.caption("Select dates (optional) then scroll down to book")
-            d1 = st.date_input("Start date", value=None, key="browse_start")
-            d2 = st.date_input("End date", value=None, key="browse_end")
+            d1 = st.date_input("Start date (optional)", value=None, key="browse_start")
+            d2 = st.date_input("End date (optional)", value=None, key="browse_end")
+            st.caption("Tip: set dates to only see items available for that window.")
 
-        tools = list_tools(keyword, category, location)
+        # 1) Broad list first (SQL filters by category/location; name/description too if you also type in the search box)
+        tools = list_tools("", category, location)
+
+        # 2) If the user typed a job sentence, filter universally by substring matching (+ simple variants)
+        if job_text.strip():
+            tools = [t for t in tools if job_matches(t, job_text)]
+
         if not tools:
             st.info("No tools found. Try clearing filters or list your first tool.")
         else:
-            for t in tools:
+            ranked = rank_tools(tools, job_text, d1 if d1 else None, d2 if d2 else None)
+
+            for t, score, reasons in ranked:
                 tool_card(t)
-                can_check = (d1 is not None) and (d2 is not None)
-                if can_check:
-                    ok = is_available(t, d1, d2)
-                    st.write("Availability:", "✅ Available for selected dates" if ok else "❌ Not available for selected dates")
-                if st.session_state.get("user") and can_check:
+
+                # Reviews preview
+                df_reviews = get_tool_reviews(t["id"])
+                with st.expander(f"Reviews ({len(df_reviews)})"):
+                    if df_reviews.empty:
+                        st.write("No reviews yet.")
+                    else:
+                        for _, r in df_reviews.iterrows():
+                            st.write(f"**{int(r['rating'])}⭐** · by {r['reviewer']} · {r['created_at']}")
+                            if r["comment"]:
+                                st.write(r["comment"])
+                            st.markdown("---")
+
+                # Availability for selected dates
+                if d1 and d2:
+                    ok = score >= 0 and is_available(t, d1, d2)
+                    st.write("Availability:", "✅ Available" if ok else "❌ Not available")
+
+                # Why-ranked explanation
+                if reasons:
+                    st.caption("Why this result: " + " • ".join(reasons[:4]))
+
+                # Book CTA
+                if st.session_state.get("user") and d1 and d2:
                     days = (d2 - d1).days + 1
                     if days > 0:
                         est = float(t["daily_price"]) * days
@@ -471,10 +643,11 @@ def main():
                             (st.success if ok else st.error)(msg)
                         else:
                             st.error("Sorry, those dates just got taken.")
+
                 st.divider()
 
     # -------- List a Tool --------
-    with tabs[1]:
+    with tab_list:
         st.subheader("List a tool or appliance")
         if not st.session_state.get("user"):
             st.warning("Please log in to list a tool.")
@@ -486,19 +659,20 @@ def main():
                 price = st.number_input("Daily price (USD) *", min_value=1.0, step=1.0)
                 loc = st.text_input("Location (City or ZIP) *")
                 afrom = st.date_input("Available from", value=None, key="afrom")
-                ato = st.date_input("Available to", value=None, key="ato")
-                img = st.file_uploader("Photo (JPG/PNG)", type=["jpg", "jpeg", "png"])
+                ato   = st.date_input("Available to", value=None, key="ato")
+                img   = st.file_uploader("Photo (JPG/PNG)", type=["jpg", "jpeg", "png"])
                 submitted = st.form_submit_button("Publish listing")
                 if submitted:
                     if not (name and price and loc):
                         st.error("Name, price, and location are required.")
                     else:
                         img_bytes = img.read() if img else None
-                        _id = add_tool(st.session_state["user"]["id"], name, desc, cat, price, loc, afrom or None, ato or None, img_bytes)
-                        st.success(f"Listed! Your tool ID is { _id }.")
+                        _id = add_tool(st.session_state["user"]["id"], name, desc, cat, price, loc,
+                                       afrom or None, ato or None, img_bytes)
+                        st.success(f"Listed! Your tool ID is {_id}.")
 
-    # -------- My Bookings --------
-    with tabs[2]:
+    # -------- My Bookings (leave reviews) --------
+    with tab_book:
         st.subheader("Your bookings")
         if not st.session_state.get("user"):
             st.info("Log in to view bookings.")
@@ -512,17 +686,13 @@ def main():
                         st.write(f"**{b['tool_name']}** — {b['start_date']} → {b['end_date']}  •  ${b['total_cost']:.2f}")
                         if b["image_path"] and os.path.exists(b["image_path"]):
                             st.image(b["image_path"], width=160)
-                        try:
-                            ended = date.fromisoformat(b["end_date"]) <= date.today()
-                        except Exception:
-                            ended = True
-                        if ended:
-                            with st.expander("Leave a review"):
-                                rating = st.slider("Rating", 1, 5, 5, key=f"rv_{b['id']}")
-                                comment = st.text_area("Comment", key=f"rvc_{b['id']}")
-                                if st.button("Submit review", key=f"rvb_{b['id']}"):
-                                    add_review(b["tool_id"], st.session_state["user"]["id"], rating, comment)
-                                    st.success("Thanks! Review added.")
+
+                        with st.expander("Leave a review"):
+                            rating  = st.slider("Rating", 1, 5, 5, key=f"rv_{b['id']}")
+                            comment = st.text_area("Comment", key=f"rvc_{b['id']}")
+                            if st.button("Submit review", key=f"rvb_{b['id']}"):
+                                add_review(b["tool_id"], st.session_state["user"]["id"], rating, comment)
+                                st.success("Thanks! Review added.")
 
 if __name__ == "__main__":
     main()
