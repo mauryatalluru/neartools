@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual envs
+.venv/
+venv/
+
+# Streamlit local cache/state
+.streamlit/cache/
+.streamlit/state/
+
+# App data (local only)
+data/
+images/
+
+# OS junk
+.DS_Store
+Thumbs.db
