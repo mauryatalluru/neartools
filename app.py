@@ -146,7 +146,7 @@ def add_tool(owner_id: int, name: str, description: str, category: str, daily_pr
                 available_from.isoformat() if available_from else None,
                 available_to.isoformat() if available_to else None,
                 image_path,
-                datetime.utcnow().isoformat(),
+                datetime.utcnow().isoformat(),  
             ),
         )
         tool_id = cur.lastrowid
