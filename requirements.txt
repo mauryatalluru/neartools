@@ -2,3 +2,4 @@ streamlit
 pillow
 pandas
 scikit-learn
+streamlit-js-eval

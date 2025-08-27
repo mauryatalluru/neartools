@@ -1,30 +1,24 @@
-# NearTools — full MVP with branding + persistent login + upgraded AI Helper (bundles)
-# Put your logo file as "logo.png" in the same folder as this file.
+# NearTools — MVP with branding + per-browser login persistence (no shared file) + admin-only reset
+# Put your logo file as "logo.png" next to this file.
 
-import os, json, hashlib, sqlite3
+import os, hashlib, sqlite3
 from datetime import date, datetime
 from typing import Optional, List, Tuple
 
 import streamlit as st
 import pandas as pd
+from streamlit_js_eval import streamlit_js_eval  # for localStorage per-browser
 
-# ---------- Optional AI libs ----------
-try:
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-    SKLEARN_OK = True
-except Exception:
-    SKLEARN_OK = False
+APP_NAME = "NearTools"
+TAGLINE  = "Own less. Do more."
 
-APP_NAME = "NearTools"           # Title text only (no subtitle)
-TAGLINE  = "Own less. Do more."  # Shown under the name
+# <<< SET THIS TO YOUR EMAIL SO ONLY YOU SEE THE RESET BUTTON >>>
+ADMIN_EMAIL = "mauryatalluru@gmail.com"
 
 # ---------- Paths ----------
 DB_DIR = "data"
 DB_PATH = os.path.join(DB_DIR, "neartools.db")
 IMAGES_DIR = "images"
-REMEMBER_FILE = os.path.join(DB_DIR, "remember_me.json")  # persistent login
-
 os.makedirs(DB_DIR, exist_ok=True)
 os.makedirs(IMAGES_DIR, exist_ok=True)
 
@@ -128,31 +122,6 @@ def get_user_by_email(email: str) -> Optional[sqlite3.Row]:
         return conn.execute("SELECT * FROM users WHERE email=?", (email.lower().strip(),)).fetchone()
     finally:
         conn.close()
-
-# ---------- Persistent login ("Keep me signed in") ----------
-def remember_user(email: str):
-    try:
-        with open(REMEMBER_FILE, "w", encoding="utf-8") as f:
-            json.dump({"email": email}, f)
-    except Exception:
-        pass
-
-def read_remembered_user() -> Optional[str]:
-    try:
-        if os.path.exists(REMEMBER_FILE):
-            with open(REMEMBER_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data.get("email")
-    except Exception:
-        return None
-    return None
-
-def forget_user():
-    try:
-        if os.path.exists(REMEMBER_FILE):
-            os.remove(REMEMBER_FILE)
-    except Exception:
-        pass
 
 # ---------- Tool & booking ops ----------
 def add_tool(owner_id: int, name: str, description: str, category: str, daily_price: float,
@@ -284,113 +253,6 @@ def get_tool_reviews(tool_id: int) -> pd.DataFrame:
     finally:
         conn.close()
 
-# ---------- AI suggestions (Upgraded: Task → Tool Bundles) ----------
-TASK_TOOL_MAP = {
-    "mount tv": {
-        "triggers": ["mount tv", "tv mount", "tv on wall", "fix tv", "attach tv", "tv bracket"],
-        "tools": {
-            "hammer drill": ["hammer drill", "drill", "masonry"],
-            "stud finder": ["stud finder"],
-            "level": ["level"],
-            "screwdriver / driver": ["screwdriver", "impact driver", "driver"]
-        }
-    },
-    "paint room / ceiling": {
-        "triggers": ["paint", "ceiling", "wall paint", "roller", "emulsion", "primer"],
-        "tools": {
-            "ladder": ["ladder"],
-            "paint sprayer / roller": ["paint sprayer", "sprayer", "roller", "paint roller"],
-            "drop cloth / tarp": ["drop cloth", "tarp"]
-        }
-    },
-    "cut wood / build furniture": {
-        "triggers": ["build table", "build shelf", "cut wood", "wood cutting", "carpentry", "2x4", "plywood"],
-        "tools": {
-            "circular saw / jigsaw": ["circular saw", "jigsaw", "saw"],
-            "drill / driver": ["drill", "driver", "impact driver"],
-            "sander": ["sander", "orbital sander"],
-            "clamps": ["clamp", "clamps"]
-        }
-    },
-    "pressure wash patio / driveway": {
-        "triggers": ["pressure wash", "power wash", "clean driveway", "clean patio", "mildew"],
-        "tools": {
-            "pressure washer": ["pressure washer", "power washer"],
-            "extension hose": ["hose", "extension hose"]
-        }
-    },
-    "garden / hedge trimming": {
-        "triggers": ["trim hedge", "hedges", "garden cleanup", "yard work", "prune"],
-        "tools": {
-            "hedge trimmer": ["hedge trimmer", "trimmer"],
-            "ladder": ["ladder"]
-        }
-    },
-    "sewing / costume / alterations": {
-        "triggers": ["sew", "costume", "alterations", "hem", "fabric", "patch"],
-        "tools": {
-            "sewing machine": ["sewing machine", "sew machine"],
-            "iron / steamer": ["iron", "steamer"]
-        }
-    },
-}
-
-FALLBACK_HINTS = {
-    "drill": ["drill", "hammer drill", "masonry", "screw", "mount tv", "shelf", "hole"],
-    "ladder": ["ladder", "roof", "gutter", "paint", "ceiling"],
-    "saw": ["saw", "cut wood", "trim", "plywood", "deck", "table"],
-    "sewing machine": ["sew", "stitch", "fabric", "hem", "costume"],
-    "sander": ["sand", "refinish", "furniture"],
-    "pressure washer": ["wash", "driveway", "patio", "pressure"],
-}
-
-def _find_matching_listings(all_tools: list, keywords: list[str]) -> list:
-    out = []
-    kw_lower = [k.lower() for k in keywords]
-    for t in all_tools:
-        hay = f"{t['name']} {(t['description'] or '')} {(t['category'] or '')}".lower()
-        if any(k in hay for k in kw_lower):
-            out.append(t)
-    return out
-
-def ai_bundle(task_text: str) -> tuple[Optional[str], dict]:
-    tl = (task_text or "").lower()
-    best_key, best_score = None, 0
-    for key, spec in TASK_TOOL_MAP.items():
-        score = sum(1 for trig in spec["triggers"] if trig in tl)
-        if score > best_score:
-            best_key, best_score = key, score
-    if best_key and best_score > 0:
-        return best_key, TASK_TOOL_MAP[best_key]["tools"]
-    return None, {}
-
-def ai_suggest_bundles(task_text: str, all_tools: list, requested_start: Optional[date], requested_end: Optional[date], location_filter: str):
-    # Pre-filter pool by location + availability
-    pool = list(all_tools)
-    if location_filter:
-        pool = [t for t in pool if location_filter.lower() in (t["location"] or "").lower()]
-    if requested_start and requested_end:
-        pool = [t for t in pool if is_available(t, requested_start, requested_end)]
-
-    task_key, needed = ai_bundle(task_text)
-    groups = []
-    if needed:
-        for label, kw in needed.items():
-            matches = _find_matching_listings(pool, kw)
-            groups.append({"label": label, "listings": matches})
-        return task_key, groups
-
-    # Fallback: score labels by keyword presence in task
-    tl = (task_text or "").lower()
-    scored = []
-    for label, kw in FALLBACK_HINTS.items():
-        score = sum(1 for w in kw if w in tl)
-        if score > 0:
-            matches = _find_matching_listings(pool, kw)
-            scored.append((score, {"label": label, "listings": matches}))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return None, [g for _, g in scored[:5]]
-
 # ---------- Branding ----------
 PALETTE = {
     "green": "#2F6D3A",
@@ -472,18 +334,21 @@ def main():
     init_db()
     inject_css()
 
-    # STICKY LOGIN (session + disk). Do NOT overwrite on rerun.
+    # Per-browser session state (not shared)
     st.session_state.setdefault("user", None)
 
-    # Auto-restore from disk (keeps login after refresh/restart)
-    if st.session_state["user"] is None:
-        remembered = read_remembered_user()
-        if remembered:
-            row = get_user_by_email(remembered)
-            if row:
-                st.session_state["user"] = dict(row)
+    # Try to auto-restore from this browser's localStorage (NOT shared with others)
+    try:
+        saved_email = streamlit_js_eval(js_expressions="localStorage.getItem('neartools_user')", key="get_saved_user")
+    except Exception:
+        saved_email = None
 
-    # Big landing hero with large logo + only tagline
+    if st.session_state["user"] is None and saved_email:
+        row = get_user_by_email(saved_email)
+        if row:
+            st.session_state["user"] = dict(row)
+
+    # Big landing hero with large logo + tagline
     logo_col, text_col = st.columns([1, 5], vertical_alignment="center")
     with logo_col:
         if os.path.exists("logo.png"):
@@ -512,20 +377,30 @@ def main():
             st.success(f"Logged in as {st.session_state['user']['name']}")
             if st.button("Log out"):
                 st.session_state["user"] = None
-                forget_user()
+                # Clear only this browser's localStorage
+                try:
+                    streamlit_js_eval(js_expressions="localStorage.removeItem('neartools_user')", key="logout_clear")
+                except Exception:
+                    pass
                 st.rerun()
         else:
             login_tab, signup_tab = st.tabs(["Log in", "Sign up"])
             with login_tab:
                 l_email = st.text_input("Email", key="login_email")
                 l_pw = st.text_input("Password", type="password", key="login_pw")
-                keep = st.checkbox("Keep me signed in", value=True)
+                keep = st.checkbox("Keep me signed in on this browser", value=True)
                 if st.button("Log in"):
                     u = verify_user(l_email, l_pw)
                     if u:
                         st.session_state["user"] = dict(u)
                         if keep:
-                            remember_user(l_email)
+                            # Save only in THIS browser (not server disk)
+                            try:
+                                streamlit_js_eval(
+                                    js_expressions=f"localStorage.setItem('neartools_user', '{l_email.lower().strip()}')",
+                                    key="login_save")
+                            except Exception:
+                                pass
                         st.success("Logged in!")
                         st.rerun()
                     else:
@@ -546,17 +421,18 @@ def main():
                         (st.success if ok else st.error)(msg)
 
         st.divider()
-        if st.button("🗑 Reset local database"):
-            try:
-                if os.path.exists(DB_PATH):
-                    os.remove(DB_PATH)
-                forget_user()
-                init_db()
-                st.success("Database reset. Reload the page.")
-            except Exception as e:
-                st.error(f"Could not reset DB: {e}")
+        # Admin-only Reset DB (hidden from everyone else)
+        if st.session_state.get("user") and st.session_state["user"]["email"] == ADMIN_EMAIL:
+            if st.button("🗑 Reset local database (admin)"):
+                try:
+                    if os.path.exists(DB_PATH):
+                        os.remove(DB_PATH)
+                    init_db()
+                    st.success("Database reset. Reload the page.")
+                except Exception as e:
+                    st.error(f"Could not reset DB: {e}")
 
-        # Main tabs (Browse, List, Bookings)
+    # Main tabs
     tabs = st.tabs(["Browse", "List a Tool", "My Bookings"])
 
     # -------- Browse --------
@@ -566,10 +442,7 @@ def main():
         with c1:
             keyword = st.text_input("Keyword (e.g., drill, sander)")
         with c2:
-            category = st.selectbox(
-                "Category (optional)",
-                ["", "drill", "ladder", "saw", "sewing machine", "sander", "pressure washer"],
-            )
+            category = st.selectbox("Category (optional)", ["", "drill", "ladder", "saw", "sewing machine", "sander", "pressure washer"])
         with c3:
             location = st.text_input("Location filter (optional)")
         with c4:
@@ -583,12 +456,10 @@ def main():
         else:
             for t in tools:
                 tool_card(t)
-
                 can_check = (d1 is not None) and (d2 is not None)
                 if can_check:
                     ok = is_available(t, d1, d2)
                     st.write("Availability:", "✅ Available for selected dates" if ok else "❌ Not available for selected dates")
-
                 if st.session_state.get("user") and can_check:
                     days = (d2 - d1).days + 1
                     if days > 0:
@@ -600,7 +471,6 @@ def main():
                             (st.success if ok else st.error)(msg)
                         else:
                             st.error("Sorry, those dates just got taken.")
-
                 st.divider()
 
     # -------- List a Tool --------
@@ -618,24 +488,13 @@ def main():
                 afrom = st.date_input("Available from", value=None, key="afrom")
                 ato = st.date_input("Available to", value=None, key="ato")
                 img = st.file_uploader("Photo (JPG/PNG)", type=["jpg", "jpeg", "png"])
-
                 submitted = st.form_submit_button("Publish listing")
                 if submitted:
                     if not (name and price and loc):
                         st.error("Name, price, and location are required.")
                     else:
                         img_bytes = img.read() if img else None
-                        _id = add_tool(
-                            st.session_state["user"]["id"],
-                            name,
-                            desc,
-                            cat,
-                            price,
-                            loc,
-                            afrom or None,
-                            ato or None,
-                            img_bytes,
-                        )
+                        _id = add_tool(st.session_state["user"]["id"], name, desc, cat, price, loc, afrom or None, ato or None, img_bytes)
                         st.success(f"Listed! Your tool ID is { _id }.")
 
     # -------- My Bookings --------
@@ -650,17 +509,13 @@ def main():
             else:
                 for b in rows:
                     with st.container(border=True):
-                        st.write(
-                            f"**{b['tool_name']}** — {b['start_date']} → {b['end_date']}  •  ${b['total_cost']:.2f}"
-                        )
+                        st.write(f"**{b['tool_name']}** — {b['start_date']} → {b['end_date']}  •  ${b['total_cost']:.2f}")
                         if b["image_path"] and os.path.exists(b["image_path"]):
                             st.image(b["image_path"], width=160)
-
                         try:
                             ended = date.fromisoformat(b["end_date"]) <= date.today()
                         except Exception:
                             ended = True
-
                         if ended:
                             with st.expander("Leave a review"):
                                 rating = st.slider("Rating", 1, 5, 5, key=f"rv_{b['id']}")
@@ -671,4 +526,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
