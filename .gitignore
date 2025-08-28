@@ -17,3 +17,4 @@ images/
 # OS junk
 .DS_Store
 Thumbs.db
+.streamlit/secrets.toml

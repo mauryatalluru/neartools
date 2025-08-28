@@ -1,13 +1,13 @@
 # NearTools — polished MVP (cookie-stable login)
 # Features:
-# - Sign up / Log in (hashed passwords)
-# - Persistent login via secure cookies (per browser; not shared across visitors)
-# - Admin-only "Reset local database" button (hidden for others)
-# - List a Tool (photo, price/day, availability window, location, category, desc)
-# - Browse with job description + ranking (intent + ratings + popularity + availability)
-# - Universal job matching (any word typed will surface matching listings)
-# - Tool reviews (read in Browse; write in My Bookings)
+# - Sign up / Log in (hashed passwords) + persistent cookie per browser
+# - Admin-only DB reset (hidden for others)
+# - List a Tool (photo, price/day, availability, location, category, desc)
+# - Browse with universal job matching + ranking (intent + ratings + popularity + availability)
 # - Bookings with date window + cost calc
+# - Reviews (read in Browse; write in My Bookings)
+# - NEW: Owners can delete their own listings (blocked if future confirmed bookings exist)
+# - NEW: Borrowers can cancel their own bookings (status -> canceled)
 # - Clean branding + big logo hero
 
 import os
@@ -23,7 +23,7 @@ from streamlit_cookies_manager import EncryptedCookieManager
 
 # ------------------ Branding ------------------
 APP_NAME = "NearTools"
-TAGLINE   = "Own less. Do more."
+TAGLINE  = "Own less. Do more."
 
 PALETTE = {
     "green": "#2F6D3A",
@@ -72,7 +72,7 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 # ------------------ Config ------------------
-ADMIN_EMAIL = "your.email@example.com"  # <- change to YOUR email for admin-only reset
+ADMIN_EMAIL = "your.email@example.com"  # <- set your email to see the reset button
 
 DB_DIR     = "data"
 DB_PATH    = os.path.join(DB_DIR, "neartools.db")
@@ -180,7 +180,7 @@ def get_user_by_email(email: str) -> Optional[sqlite3.Row]:
     finally:
         conn.close()
 
-# ------------------ Tool & booking ops ------------------
+# ------------------ Tools & Bookings ------------------
 def add_tool(owner_id: int, name: str, description: str, category: str, daily_price: float,
              location: str, available_from: Optional[date], available_to: Optional[date],
              image_bytes: Optional[bytes]) -> int:
@@ -211,7 +211,7 @@ def add_tool(owner_id: int, name: str, description: str, category: str, daily_pr
     return tool_id
 
 def list_tools(keyword: str = "", category: str = "", location: str = "") -> List[sqlite3.Row]:
-    """SQL filter that now matches keyword against NAME **or DESCRIPTION** (case-insensitive)."""
+    """SQL filter that matches keyword against NAME or DESCRIPTION + category + location."""
     kw  = f"%{(keyword or '').lower().strip()}%"
     cat = f"%{(category or '').lower().strip()}%" if category else "%"
     loc = f"%{(location or '').lower().strip()}%" if location else "%"
@@ -230,6 +230,16 @@ def list_tools(keyword: str = "", category: str = "", location: str = "") -> Lis
             (kw, kw, cat, loc),
         )
         return cur.fetchall()
+    finally:
+        conn.close()
+
+def get_user_tools(owner_id: int) -> List[sqlite3.Row]:
+    conn = get_conn()
+    try:
+        return conn.execute(
+            "SELECT * FROM tools WHERE owner_id=? ORDER BY created_at DESC",
+            (owner_id,)
+        ).fetchall()
     finally:
         conn.close()
 
@@ -291,6 +301,57 @@ def get_user_bookings(user_id: int) -> List[sqlite3.Row]:
     finally:
         conn.close()
 
+def cancel_booking(booking_id: int, user_id: int) -> Tuple[bool, str]:
+    """Borrower can cancel their own confirmed booking."""
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT borrower_id, status FROM bookings WHERE id=?", (booking_id,)).fetchone()
+        if not row:
+            return False, "Booking not found."
+        if int(row["borrower_id"]) != int(user_id):
+            return False, "You can only cancel your own booking."
+        if row["status"] != "confirmed":
+            return False, "This booking is not confirmed."
+        with conn:
+            conn.execute("UPDATE bookings SET status='canceled' WHERE id=?", (booking_id,))
+        return True, "Booking canceled."
+    finally:
+        conn.close()
+
+def has_future_confirmed_bookings(tool_id: int) -> bool:
+    """Block deletion if any upcoming confirmed bookings exist for this tool."""
+    today = date.today().isoformat()
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM bookings
+            WHERE tool_id=? AND status='confirmed' AND end_date >= ?
+            """,
+            (tool_id, today),
+        ).fetchone()
+        return int(row["c"] or 0) > 0
+    finally:
+        conn.close()
+
+def delete_tool(tool_id: int, owner_id: int) -> Tuple[bool, str]:
+    """Owner can delete their own tool if no future confirmed bookings exist."""
+    conn = get_conn()
+    try:
+        tool = conn.execute("SELECT owner_id FROM tools WHERE id=?", (tool_id,)).fetchone()
+        if not tool:
+            return False, "Tool not found."
+        if int(tool["owner_id"]) != int(owner_id):
+            return False, "You can only delete tools you own."
+        if has_future_confirmed_bookings(tool_id):
+            return False, "Cannot delete: this tool has upcoming confirmed bookings."
+        with conn:
+            conn.execute("DELETE FROM tools WHERE id=?", (tool_id,))
+        return True, "Tool deleted."
+    finally:
+        conn.close()
+
 def add_review(tool_id: int, reviewer_id: int, rating: int, comment: str) -> None:
     conn = get_conn()
     with conn:
@@ -315,7 +376,7 @@ def get_tool_reviews(tool_id: int) -> pd.DataFrame:
     finally:
         conn.close()
 
-# ------------------ Smart ranking helpers ------------------
+# ------------------ Ranking helpers ------------------
 AI_HINTS = {
     "paint": ["ladder", "paint sprayer", "roller", "drop cloth", "tarp", "brush"],
     "ceiling": ["ladder", "roller", "paint sprayer"],
@@ -359,16 +420,12 @@ def _recent_bookings_count(tool_id: int, days: int = 90) -> int:
 
 def score_tool(tool: sqlite3.Row, job_text: str, start: Optional[date], end: Optional[date]) -> tuple[float, list[str]]:
     reasons, score = [], 0.0
-
-    # Availability boost (if user chose dates)
     if start and end:
         if is_available(tool, start, end):
             score += 3.0
             reasons.append("available for your dates")
         else:
             return (-100.0, ["not available for selected dates"])
-
-    # Text match
     if job_text:
         job_tokens = _expand_with_hints(_tokenize(job_text))
         hay = _tokenize(f"{tool['name']} {(tool['description'] or '')} {(tool['category'] or '')}")
@@ -378,21 +435,16 @@ def score_tool(tool: sqlite3.Row, job_text: str, start: Optional[date], end: Opt
             reasons.append("matches: " + ", ".join(list(overlap)[:3]))
         else:
             score -= 0.5
-
-    # Ratings
     avg, cnt = _avg_rating_and_count(tool["id"])
     if cnt > 0:
         score += (avg - 3.0) * 0.8
         reasons.append(f"{avg:.1f}⭐ from {cnt}")
     else:
         reasons.append("no reviews yet")
-
-    # Popularity
     recent = _recent_bookings_count(tool["id"])
     if recent > 0:
         score += min(3.0, 0.5 + 0.4 * recent)
         reasons.append(f"{recent} recent booking(s)")
-
     return score, reasons
 
 def rank_tools(tools: list[sqlite3.Row], job_text: str, start, end) -> list[tuple[sqlite3.Row, float, list[str]]]:
@@ -439,7 +491,6 @@ def _expand(words: list[str]) -> set[str]:
     return out
 
 def job_matches(tool: sqlite3.Row, job_text: str) -> bool:
-    """Universal, loose matcher so 'bat' matches 'cricket bat', 'grass' matches mower, etc."""
     if not job_text or not job_text.strip():
         return True
     q_tokens = _expand(_simple_tokens(job_text))
@@ -480,10 +531,10 @@ def main():
     # ===== Cookie manager for persistent login (per browser) =====
     cookies = EncryptedCookieManager(
         prefix="neartools",
-        password="change_this_to_a_secret_string_1234567890",  # change to any random long string
+        password=st.secrets.get("COOKIE_PASSWORD", "fallback_dev_only"),
     )
     if not cookies.ready():
-        st.stop()  # Wait until cookies are ready
+        st.stop()
 
     # Restore user from cookie if present
     st.session_state.setdefault("user", None)
@@ -520,11 +571,10 @@ def main():
         if st.session_state.get("user"):
             st.success(f"Logged in as {st.session_state['user']['name']}")
 
-            # --- reliable logout ---
             if st.button("Log out", key="logout_btn"):
                 st.session_state.pop("user", None)
                 try:
-                    cookies["user_email"] = ""   # blank value prevents auto-restore
+                    cookies["user_email"] = ""
                     cookies.save()
                 except Exception as e:
                     st.warning(f"Could not update cookies: {e}")
@@ -578,7 +628,7 @@ def main():
     # ===== Tabs =====
     tab_browse, tab_list, tab_book = st.tabs(["Browse", "List a Tool", "My Bookings"])
 
-    # -------- Browse (universal matching + smart ranking) --------
+    # -------- Browse (universal matching + ranking) --------
     with tab_browse:
         st.subheader("Find tools near you")
         c1, c2, c3, c4 = st.columns([2.6, 2, 2, 2.6])
@@ -595,10 +645,7 @@ def main():
             d2 = st.date_input("End date (optional)", value=None, key="browse_end")
             st.caption("Tip: set dates to only see items available for that window.")
 
-        # 1) Broad list first (SQL filters by category/location; name/description too if you also type in the search box)
-        tools = list_tools("", category, location)
-
-        # 2) If the user typed a job sentence, filter universally by substring matching (+ simple variants)
+        tools = list_tools("", category, location)  # broad first
         if job_text.strip():
             tools = [t for t in tools if job_matches(t, job_text)]
 
@@ -646,7 +693,7 @@ def main():
 
                 st.divider()
 
-    # -------- List a Tool --------
+    # -------- List a Tool (with "Your listings" + delete) --------
     with tab_list:
         st.subheader("List a tool or appliance")
         if not st.session_state.get("user"):
@@ -671,7 +718,30 @@ def main():
                                        afrom or None, ato or None, img_bytes)
                         st.success(f"Listed! Your tool ID is {_id}.")
 
-    # -------- My Bookings (leave reviews) --------
+            st.markdown("### Your listings")
+            my_tools = get_user_tools(st.session_state["user"]["id"])
+            if not my_tools:
+                st.info("You haven't listed anything yet.")
+            else:
+                for t in my_tools:
+                    with st.container(border=True):
+                        cols = st.columns([1, 3, 1])
+                        with cols[0]:
+                            if t["image_path"] and os.path.exists(t["image_path"]):
+                                st.image(t["image_path"], use_container_width=True)
+                            else:
+                                st.write("🧰")
+                        with cols[1]:
+                            st.write(f"**{t['name']}** — ${t['daily_price']:.2f}/day")
+                            st.caption((t["description"] or "")[:120])
+                            st.write(f"Availability: {t['available_from'] or '—'} → {t['available_to'] or '—'}")
+                        with cols[2]:
+                            if st.button("Delete", key=f"del_{t['id']}"):
+                                ok, msg = delete_tool(t["id"], st.session_state["user"]["id"])
+                                (st.success if ok else st.error)(msg)
+                                st.rerun()
+
+    # -------- My Bookings (with Cancel) --------
     with tab_book:
         st.subheader("Your bookings")
         if not st.session_state.get("user"):
@@ -683,9 +753,20 @@ def main():
             else:
                 for b in rows:
                     with st.container(border=True):
-                        st.write(f"**{b['tool_name']}** — {b['start_date']} → {b['end_date']}  •  ${b['total_cost']:.2f}")
+                        st.write(
+                            f"**{b['tool_name']}** — {b['start_date']} → {b['end_date']}  "
+                            f"•  ${b['total_cost']:.2f}  •  Status: **{b['status']}**"
+                        )
                         if b["image_path"] and os.path.exists(b["image_path"]):
                             st.image(b["image_path"], width=160)
+
+                        # Cancel booking (only if confirmed & belongs to this user)
+                        can_cancel = (b["status"] == "confirmed") and (b["borrower_id"] == st.session_state["user"]["id"])
+                        if can_cancel:
+                            if st.button("Cancel this booking", key=f"cancel_{b['id']}"):
+                                ok, msg = cancel_booking(b["id"], st.session_state["user"]["id"])
+                                (st.success if ok else st.error)(msg)
+                                st.rerun()
 
                         with st.expander("Leave a review"):
                             rating  = st.slider("Rating", 1, 5, 5, key=f"rv_{b['id']}")
