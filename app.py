@@ -717,29 +717,62 @@ def main():
         if not st.session_state.get("user"):
             st.warning("Please log in to list a tool.")
         else:
-            with st.form("list_tool_form", clear_on_submit=True):
-                name = st.text_input("Tool name *", placeholder="e.g., Hammer Drill")
-                desc = st.text_area("Description", placeholder="Add details, condition, size, etc.")
-                cat = st.text_input("Category", placeholder="e.g., drill, ladder, saw…")
-                price = st.number_input("Daily price (USD) *", min_value=1.0, step=1.0)
-                loc = st.text_input("Location (City or ZIP) *")
-                afrom = st.date_input("Available from", value=None, key="afrom")
-                ato   = st.date_input("Available to", value=None, key="ato")
-                img   = st.file_uploader("Photo (JPG/PNG)", type=["jpg", "jpeg", "png"])
+           with st.form("list_tool_form", clear_on_submit=False):
 
-                submitted = st.form_submit_button("Publish listing")
-                if submitted and not st.session_state.get("just_published_tool"):
-                    if not (name and price and loc):
-                        st.error("Name, price, and location are required.")
-                    else:
-                        img_bytes = img.read() if img else None
+            # Give fields explicit keys so we can reset them later
+               name = st.text_input("Tool name *", placeholder="e.g., Hammer Drill", key="form_name")
+               desc = st.text_area("Description", placeholder="Add details, condition, size, etc.", key="form_desc")
+               cat  = st.text_input("Category", placeholder="e.g., drill, ladder, saw…", key="form_cat")
+               price = st.number_input("Daily price (USD) *", min_value=1.0, step=1.0, key="form_price")
+               loc   = st.text_input("Location (City or ZIP) *", key="form_loc")
+               afrom = st.date_input("Available from", value=None, key="form_afrom")
+               ato   = st.date_input("Available to", value=None, key="form_ato")
+
+            # Persist the uploaded file bytes so a rerun doesn't lose it
+               img = st.file_uploader("Photo (JPG/PNG)", type=["jpg", "jpeg", "png"], key="form_img")
+               if img is not None:
+                st.session_state["form_img_bytes"] = img.getvalue()
+
+               submitted = st.form_submit_button("Publish listing")
+
+               if submitted:
+                # Minimal validation (keeps the user’s inputs on screen)
+                problems = []
+                if not name: problems.append("Tool name")
+                if not loc:  problems.append("Location")
+                try:
+                    price_ok = float(price) >= 1.0
+                except Exception:
+                    price_ok = False
+                if not price_ok: problems.append("Daily price (≥ 1)")
+
+                if problems:
+                    st.error("Please fill: " + ", ".join(problems))
+                else:
+                    try:
+                        img_bytes = st.session_state.get("form_img_bytes")
                         _id = add_tool(
                             st.session_state["user"]["id"], name, desc, cat, price, loc,
                             afrom or None, ato or None, img_bytes
                         )
-                        st.session_state["just_published_tool"] = True  # guard to avoid double fire after rerun
                         st.success(f"Listed! Your tool ID is {_id}.")
-                        st.rerun()
+
+                        # Clear the form ONLY AFTER success
+                        st.session_state.update({
+                            "form_name": "",
+                            "form_desc": "",
+                            "form_cat": "",
+                            "form_price": 1.0,
+                            "form_loc": "",
+                            "form_afrom": None,
+                            "form_ato": None,
+                            "form_img": None,
+                        })
+                        st.session_state.pop("form_img_bytes", None)
+
+                        st.rerun()  # refresh to show the new listing in "Your listings"
+                    except Exception as e:
+                        st.error(f"Couldn't publish: {e}")
 
         st.markdown("### Your listings")
         if st.session_state.get("user"):
