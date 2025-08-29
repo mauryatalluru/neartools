@@ -516,32 +516,25 @@ def main():
     init_db()
     inject_css()
 
-    # ===== Cookie manager – wait silently until ready (prevents red traceback flash) =====
+    # ===== Cookie manager (non-blocking) =====
     cookies = EncryptedCookieManager(
         prefix="neartools",
         password=st.secrets.get("COOKIE_PASSWORD", "fallback_dev_only"),
     )
-    try:
-        if not cookies.ready():
-            st.empty()  # render nothing while cookie backend initializes
-            st.stop()
-    except Exception:
-        st.empty()
-        st.stop()
-
-    # ===== Restore user from cookie if present =====
+    cookies_ready = cookies.ready()  # don't stop the app if cookies aren't ready yet
+ 
+    # Restore user from cookie if present
     st.session_state.setdefault("user", None)
-    saved_email = (cookies.get("user_email") or "").strip()
+    saved_email = ""
+    if cookies_ready:
+        saved_email = (cookies.get("user_email") or "").strip()
     if saved_email and not st.session_state["user"]:
         row = get_user_by_email(saved_email)
         if row:
             st.session_state["user"] = dict(row)
 
-    # ===== one-shot guard to stop double publish =====
-    st.session_state.setdefault("publish_guard", False)
-    if st.session_state["publish_guard"]:
-        # Clear the guard at the start of each fresh render
-        st.session_state["publish_guard"] = False
+
+    
 
     # ===== Hero (logo + greeting) =====
     greet = ""
@@ -587,29 +580,40 @@ def main():
             st.success(f"Logged in as {st.session_state['user']['name']}")
             if st.button("Log out", key="logout_btn"):
                 st.session_state.pop("user", None)
-                try:
+                if cookies_ready:
                     cookies["user_email"] = ""
                     cookies.save()
-                except Exception as e:
-                    st.warning(f"Could not update cookies: {e}")
                 st.toast("You’ve been logged out.", icon="✅")
                 st.rerun()
+
         else:
             login_tab, signup_tab = st.tabs(["Log in", "Sign up"])
 
             with login_tab:
                 l_email = st.text_input("E-mail or Phone Number", key="login_email")
                 l_pw    = st.text_input("Password", type="password", key="login_pw")
-                if st.button("Log in"):
-                    u = verify_user(l_email, l_pw)
-                    if u:
-                        st.session_state["user"] = dict(u)
-                        cookies["user_email"] = l_email.lower().strip()
-                        cookies.save()
-                        st.success("Logged in!")
-                        st.rerun()
+
+                if st.button("Log in", key="login_btn"):
+                    # only attempt login if both fields provided
+                    if not l_email or not l_pw:
+                        st.warning("Please enter your e-mail/phone and password.")
                     else:
-                        st.error("Invalid credentials.")
+                        u = verify_user(l_email, l_pw)
+                        if u:
+                            st.session_state["user"] = dict(u)
+                            st.session_state["user"] = dict(u)
+                            try:
+                                cookies["user_email"] = l_email.lower().strip()
+                                cookies.save()
+                            except Exception:
+                                pass
+                            st.success("Logged in!")
+                            st.rerun()
+                        else:
+                            st.error("Invalid credentials. Check your e-mail/phone and password.")
+
+
+
 
             with signup_tab:
                 s_name  = st.text_input("Full name")
@@ -700,14 +704,34 @@ def main():
                             st.error("Sorry, those dates just got taken.")
                 st.divider()
 
-    # -------- List a Tool (SINGLE CLICK publish) --------
+    # -------- List a Tool (single-click, rerun-safe) --------
     with tab_list:
         st.subheader("List a tool or appliance")
+
         if not st.session_state.get("user"):
             st.warning("Please log in to list a tool.")
         else:
-            # Build the form (unique key). We handle submission AFTER the form.
-            with st.form(key="list_form_v3", clear_on_submit=True):
+            # (A) If we have a pending submission from the previous run, write it now
+            if st.session_state.get("pending_listing"):
+                payload = st.session_state.pop("pending_listing")
+                try:
+                    _id = add_tool(
+                        st.session_state["user"]["id"],
+                        payload["name"],
+                        payload["desc"],
+                        payload["cat"],
+                        payload["price"],
+                        payload["loc"],
+                        payload["afrom"],
+                        payload["ato"],
+                        payload["img_bytes"],
+                    )
+                    st.success(f"Listed! Your tool ID is {_id}.")
+                except Exception as e:
+                    st.error(f"Couldn't publish: {e}")
+
+            # (B) Render the form
+            with st.form(key="list_form_streamlit_cloud_safe", clear_on_submit=True):
                 name  = st.text_input("Tool name *", placeholder="e.g., Hammer Drill")
                 desc  = st.text_area("Description", placeholder="Add details, condition, size, etc.")
                 cat   = st.text_input("Category", placeholder="e.g., drill, ladder, saw…")
@@ -716,34 +740,33 @@ def main():
                 afrom = st.date_input("Available from", value=None, key="afrom")
                 ato   = st.date_input("Available to", value=None, key="ato")
                 img   = st.file_uploader("Photo (JPG/PNG)", type=["jpg", "jpeg", "png"])
-                submitted = st.form_submit_button("Publish listing", key="publish_btn_v3")
+                submitted = st.form_submit_button("Publish listing")
 
-            # Handle submit here (no double fire). Guard prevents the "second click" issue.
-            if submitted and not st.session_state.get("publish_guard", False):
-                errors = []
-                if not name: errors.append("Tool name")
-                if not loc: errors.append("Location")
+            # (C) On click → validate → STASH data in session → RERUN
+            if submitted:
+                problems = []
+                if not name: problems.append("Tool name")
+                if not loc:  problems.append("Location")
                 try:
                     price_ok = float(price) >= 1.0
                 except Exception:
                     price_ok = False
-                if not price_ok: errors.append("Daily price (>= 1)")
+                if not price_ok: problems.append("Daily price (>= 1)")
 
-                if errors:
-                    st.error("Please fill: " + ", ".join(errors))
+                if problems:
+                    st.error("Please fill: " + ", ".join(problems))
                 else:
-                    try:
-                        img_bytes = img.read() if img else None
-                        _id = add_tool(
-                            st.session_state["user"]["id"], name, desc, cat, price, loc,
-                            afrom or None, ato or None, img_bytes
-                        )
-                        st.success(f"Listed! Your tool ID is {_id}.")
-                        # arm guard and clean rerender so the button doesn’t fire again
-                        st.session_state["publish_guard"] = True
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Couldn't publish: {e}")
+                    st.session_state["pending_listing"] = {
+                        "name": name.strip(),
+                        "desc": (desc or "").strip(),
+                        "cat":  (cat or "").strip(),
+                        "price": float(price),
+                        "loc":  loc.strip(),
+                        "afrom": afrom or None,
+                        "ato":   ato or None,
+                        "img_bytes": (img.read() if img else None),
+                    }
+                st.rerun()  # next run will hit (A) and write once
 
         st.markdown("### Your listings")
         if st.session_state.get("user"):
@@ -768,6 +791,7 @@ def main():
                                 ok, msg = delete_tool(t["id"], st.session_state["user"]["id"])
                                 (st.success if ok else st.error)(msg)
                                 st.rerun()
+
 
     # -------- My Bookings --------
     with tab_book:
