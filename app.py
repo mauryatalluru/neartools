@@ -6,9 +6,11 @@
 # - Browse with universal job matching + ranking (intent + ratings + popularity + availability)
 # - Bookings with date window + cost calc
 # - Reviews (read in Browse; write in My Bookings)
-# - NEW: Owners can delete their own listings (blocked if future confirmed bookings exist)
-# - NEW: Borrowers can cancel their own bookings (status -> canceled)
+# - Owners can delete their own listings (blocked if future confirmed bookings exist)
+# - Borrowers can cancel their own bookings (status -> canceled)
+# - Live metrics row (users / tools / bookings / reviews)
 # - Clean branding + big logo hero
+# - FIX: no "double publish" on the List form, no tab name errors
 
 import os
 import re
@@ -211,7 +213,6 @@ def add_tool(owner_id: int, name: str, description: str, category: str, daily_pr
     return tool_id
 
 def list_tools(keyword: str = "", category: str = "", location: str = "") -> List[sqlite3.Row]:
-    """SQL filter that matches keyword against NAME or DESCRIPTION + category + location."""
     kw  = f"%{(keyword or '').lower().strip()}%"
     cat = f"%{(category or '').lower().strip()}%" if category else "%"
     loc = f"%{(location or '').lower().strip()}%" if location else "%"
@@ -302,7 +303,6 @@ def get_user_bookings(user_id: int) -> List[sqlite3.Row]:
         conn.close()
 
 def cancel_booking(booking_id: int, user_id: int) -> Tuple[bool, str]:
-    """Borrower can cancel their own confirmed booking."""
     conn = get_conn()
     try:
         row = conn.execute("SELECT borrower_id, status FROM bookings WHERE id=?", (booking_id,)).fetchone()
@@ -319,7 +319,6 @@ def cancel_booking(booking_id: int, user_id: int) -> Tuple[bool, str]:
         conn.close()
 
 def has_future_confirmed_bookings(tool_id: int) -> bool:
-    """Block deletion if any upcoming confirmed bookings exist for this tool."""
     today = date.today().isoformat()
     conn = get_conn()
     try:
@@ -336,7 +335,6 @@ def has_future_confirmed_bookings(tool_id: int) -> bool:
         conn.close()
 
 def delete_tool(tool_id: int, owner_id: int) -> Tuple[bool, str]:
-    """Owner can delete their own tool if no future confirmed bookings exist."""
     conn = get_conn()
     try:
         tool = conn.execute("SELECT owner_id FROM tools WHERE id=?", (tool_id,)).fetchone()
@@ -375,17 +373,11 @@ def get_tool_reviews(tool_id: int) -> pd.DataFrame:
         )
     finally:
         conn.close()
-def get_metrics() -> tuple[int, int, int, int]:
-    """
-    Return (users, tools, bookings, reviews) counts.
-    Safe on first run: ensures schema exists and returns zeros if DB is empty.
-    """
-    # make sure tables exist
-    init_db()
 
+def get_metrics() -> tuple[int, int, int, int]:
+    init_db()
     conn = get_conn()
     try:
-        # IFNULL guards against None
         users    = conn.execute("SELECT IFNULL(COUNT(*), 0) FROM users").fetchone()[0]
         tools    = conn.execute("SELECT IFNULL(COUNT(*), 0) FROM tools").fetchone()[0]
         bookings = conn.execute("SELECT IFNULL(COUNT(*), 0) FROM bookings").fetchone()[0]
@@ -562,6 +554,12 @@ def main():
         if row:
             st.session_state["user"] = dict(row)
 
+    # one-shot guard to prevent double publish
+    st.session_state.setdefault("just_published_tool", False)
+    if st.session_state.get("just_published_tool"):
+        # clear on fresh render; the guard only blocks the immediate rerun
+        st.session_state["just_published_tool"] = False
+
     # ===== Hero =====
     left, right = st.columns([1, 5], vertical_alignment="center")
     with left:
@@ -579,16 +577,15 @@ def main():
             """, unsafe_allow_html=True
         )
         # Live metrics row (users / tools / bookings / reviews)
-    try:
+        try:
             m_users, m_tools, m_bookings, m_reviews = get_metrics()
             mc1, mc2, mc3, mc4 = st.columns(4)
             with mc1: st.metric("Users", m_users)
             with mc2: st.metric("Tools", m_tools)
             with mc3: st.metric("Bookings", m_bookings)
             with mc4: st.metric("Reviews", m_reviews)
-    except Exception as e:
-        # show the real error so we can see what's wrong instead of a silent caption
-        st.warning(f"Metrics unavailable: {e}")         
+        except Exception as e:
+            st.warning(f"Metrics unavailable: {e}")
 
     # ===== Sidebar: auth + admin reset =====
     with st.sidebar:
@@ -599,7 +596,6 @@ def main():
 
         if st.session_state.get("user"):
             st.success(f"Logged in as {st.session_state['user']['name']}")
-
             if st.button("Log out", key="logout_btn"):
                 st.session_state.pop("user", None)
                 try:
@@ -609,7 +605,6 @@ def main():
                     st.warning(f"Could not update cookies: {e}")
                 st.toast("You’ve been logged out.", icon="✅")
                 st.rerun()
-
         else:
             login_tab, signup_tab = st.tabs(["Log in", "Sign up"])
 
@@ -643,7 +638,6 @@ def main():
                         (st.success if ok else st.error)(msg)
 
         st.divider()
-        # Admin-only DB reset
         if st.session_state.get("user") and st.session_state["user"]["email"] == ADMIN_EMAIL:
             if st.button("🗑 Reset local database (admin)"):
                 try:
@@ -657,7 +651,7 @@ def main():
     # ===== Tabs =====
     tab_browse, tab_list, tab_book = st.tabs(["Browse", "List a Tool", "My Bookings"])
 
-    # -------- Browse (universal matching + ranking) --------
+    # -------- Browse --------
     with tab_browse:
         st.subheader("Find tools near you")
         c1, c2, c3, c4 = st.columns([2.6, 2, 2, 2.6])
@@ -686,7 +680,6 @@ def main():
             for t, score, reasons in ranked:
                 tool_card(t)
 
-                # Reviews preview
                 df_reviews = get_tool_reviews(t["id"])
                 with st.expander(f"Reviews ({len(df_reviews)})"):
                     if df_reviews.empty:
@@ -698,16 +691,13 @@ def main():
                                 st.write(r["comment"])
                             st.markdown("---")
 
-                # Availability for selected dates
                 if d1 and d2:
                     ok = score >= 0 and is_available(t, d1, d2)
                     st.write("Availability:", "✅ Available" if ok else "❌ Not available")
 
-                # Why-ranked explanation
                 if reasons:
                     st.caption("Why this result: " + " • ".join(reasons[:4]))
 
-                # Book CTA
                 if st.session_state.get("user") and d1 and d2:
                     days = (d2 - d1).days + 1
                     if days > 0:
@@ -719,10 +709,9 @@ def main():
                             (st.success if ok else st.error)(msg)
                         else:
                             st.error("Sorry, those dates just got taken.")
-
                 st.divider()
 
-    # -------- List a Tool (with "Your listings" + delete) --------
+    # -------- List a Tool --------
     with tab_list:
         st.subheader("List a tool or appliance")
         if not st.session_state.get("user"):
@@ -737,17 +726,23 @@ def main():
                 afrom = st.date_input("Available from", value=None, key="afrom")
                 ato   = st.date_input("Available to", value=None, key="ato")
                 img   = st.file_uploader("Photo (JPG/PNG)", type=["jpg", "jpeg", "png"])
+
                 submitted = st.form_submit_button("Publish listing")
-                if submitted:
+                if submitted and not st.session_state.get("just_published_tool"):
                     if not (name and price and loc):
                         st.error("Name, price, and location are required.")
                     else:
                         img_bytes = img.read() if img else None
-                        _id = add_tool(st.session_state["user"]["id"], name, desc, cat, price, loc,
-                                       afrom or None, ato or None, img_bytes)
+                        _id = add_tool(
+                            st.session_state["user"]["id"], name, desc, cat, price, loc,
+                            afrom or None, ato or None, img_bytes
+                        )
+                        st.session_state["just_published_tool"] = True  # guard to avoid double fire after rerun
                         st.success(f"Listed! Your tool ID is {_id}.")
+                        st.rerun()
 
-            st.markdown("### Your listings")
+        st.markdown("### Your listings")
+        if st.session_state.get("user"):
             my_tools = get_user_tools(st.session_state["user"]["id"])
             if not my_tools:
                 st.info("You haven't listed anything yet.")
@@ -770,7 +765,7 @@ def main():
                                 (st.success if ok else st.error)(msg)
                                 st.rerun()
 
-    # -------- My Bookings (with Cancel) --------
+    # -------- My Bookings --------
     with tab_book:
         st.subheader("Your bookings")
         if not st.session_state.get("user"):
@@ -789,7 +784,6 @@ def main():
                         if b["image_path"] and os.path.exists(b["image_path"]):
                             st.image(b["image_path"], width=160)
 
-                        # Cancel booking (only if confirmed & belongs to this user)
                         can_cancel = (b["status"] == "confirmed") and (b["borrower_id"] == st.session_state["user"]["id"])
                         if can_cancel:
                             if st.button("Cancel this booking", key=f"cancel_{b['id']}"):
