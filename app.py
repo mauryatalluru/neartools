@@ -375,6 +375,24 @@ def get_tool_reviews(tool_id: int) -> pd.DataFrame:
         )
     finally:
         conn.close()
+def get_metrics() -> tuple[int, int, int, int]:
+    """
+    Return (users, tools, bookings, reviews) counts.
+    Safe on first run: ensures schema exists and returns zeros if DB is empty.
+    """
+    # make sure tables exist
+    init_db()
+
+    conn = get_conn()
+    try:
+        # IFNULL guards against None
+        users    = conn.execute("SELECT IFNULL(COUNT(*), 0) FROM users").fetchone()[0]
+        tools    = conn.execute("SELECT IFNULL(COUNT(*), 0) FROM tools").fetchone()[0]
+        bookings = conn.execute("SELECT IFNULL(COUNT(*), 0) FROM bookings").fetchone()[0]
+        reviews  = conn.execute("SELECT IFNULL(COUNT(*), 0) FROM reviews").fetchone()[0]
+        return int(users), int(tools), int(bookings), int(reviews)
+    finally:
+        conn.close()
 
 # ------------------ Ranking helpers ------------------
 AI_HINTS = {
@@ -560,6 +578,17 @@ def main():
             </div>
             """, unsafe_allow_html=True
         )
+        # Live metrics row (users / tools / bookings / reviews)
+    try:
+            m_users, m_tools, m_bookings, m_reviews = get_metrics()
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            with mc1: st.metric("Users", m_users)
+            with mc2: st.metric("Tools", m_tools)
+            with mc3: st.metric("Bookings", m_bookings)
+            with mc4: st.metric("Reviews", m_reviews)
+    except Exception as e:
+        # show the real error so we can see what's wrong instead of a silent caption
+        st.warning(f"Metrics unavailable: {e}")         
 
     # ===== Sidebar: auth + admin reset =====
     with st.sidebar:
