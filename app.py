@@ -1,5 +1,5 @@
-# NearTools — polished MVP (cookie-stable login)
-# Features:
+# NearTools — polished MVP (cookie-stable login) — Option A Startup Theme
+# Features (unchanged functionally, upgraded UI):
 # - Sign up / Log in (hashed passwords) + persistent cookie per browser
 # - Admin-only DB reset (hidden for others)
 # - List a Tool (photo, price/day, availability, location, category, desc)
@@ -9,10 +9,13 @@
 # - Owners can delete their own listings (blocked if future confirmed bookings exist)
 # - Borrowers can cancel their own bookings (status -> canceled)
 # - Live metrics row (users / tools / bookings / reviews)
-# - FIXES:
-#   * No “form_name cannot be modified” error (unique keys + submit handled outside the form)
-#   * No double-click to publish (single click publishes, we trigger a clean rerun)
-#   * Login/Signup field label changed to “E-mail or Phone Number”
+# UI/UX:
+# - Option A professional green theme, modern inputs/cards
+# - Greeting “Hi, {Name} 👋 — NearTools” after login
+# Fixes:
+# - No “form_name cannot be modified” error (unique keys, submit handled outside the form)
+# - No double-click to publish (single click + clean rerun)
+# - Login/Signup label set to “E-mail or Phone Number”
 
 import os
 import re
@@ -29,49 +32,123 @@ from streamlit_cookies_manager import EncryptedCookieManager
 APP_NAME = "NearTools"
 TAGLINE  = "Own less. Do more."
 
+# Option A palette
 PALETTE = {
-    "green": "#2F6D3A",
-    "leaf": "#8FBF65",
-    "teal": "#23A094",
-    "orange": "#F59E0B",
-    "ink": "#1F2A1C",
-    "card": "#F0F3EE",
-    "bg": "#FAFAF7",
+    "green":  "#2F6D3A",   # primary action
+    "leaf":   "#9BCB8F",   # light accent
+    "teal":   "#39A68C",   # hover
+    "orange": "#F2B266",   # secondary accent
+    "ink":    "#1E2A1C",   # headings
+    "card":   "#F6F8F4",   # card surface
+    "bg":     "#E9F0E6",   # page background (soft green)
+    "stroke": "#DCE5D8",   # subtle borders
 }
+
 
 def inject_css():
     st.markdown(f"""
     <style>
-        html, body, [data-testid="stAppViewContainer"] {{
-            background: {PALETTE["bg"]};
-        }}
-        .hero {{
-            background: linear-gradient(90deg, {PALETTE["leaf"]}33 0%, {PALETTE["teal"]}33 50%, {PALETTE["orange"]}33 100%);
-            border: 1px solid #e7eadf;
-            border-radius: 24px;
-            padding: 18px 22px;
-            margin-bottom: 18px;
-        }}
-        .hero .title {{
-            font-weight: 900;
-            font-size: 2.1rem;
-            margin: 0;
-            color: {PALETTE["ink"]};
-        }}
-        .hero .tagline {{
-            margin: 2px 0 0 0;
-            font-size: 1.05rem;
-            color: #556355;
-        }}
-        .stButton>button {{
-            background: {PALETTE["green"]};
-            color: white; border-radius: 10px; border: 0;
-            padding: 0.55rem 0.9rem;
-        }}
-        .stButton>button:hover {{ background: {PALETTE["teal"]}; }}
-        .stTextInput>div>div>input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {{
-            background: white; border-radius: 10px; border: 1px solid #dfe4da;
-        }}
+      :root {{
+        --bg: {PALETTE["bg"]};
+        --card: {PALETTE["card"]};
+        --stroke: {PALETTE["stroke"]};
+        --ink: {PALETTE["ink"]};
+        --green: {PALETTE["green"]};
+        --leaf: {PALETTE["leaf"]};
+        --teal: {PALETTE["teal"]};
+        --orange: {PALETTE["orange"]};
+      }}
+
+      html, body, [data-testid="stAppViewContainer"] {{
+        background: var(--bg);
+      }}
+
+      /* Option-A hero: soft glass card */
+      .hero {{
+        background:
+          linear-gradient(90deg, rgba(155,203,143,0.20) 0%,
+                               rgba(57,166,140,0.14) 60%,
+                               rgba(242,178,102,0.12) 100%);
+        border: 1px solid var(--stroke);
+        border-radius: 22px;
+        padding: 16px 20px;
+        margin: 8px 0 16px 0;
+        box-shadow: 0 8px 24px rgba(26, 58, 34, 0.06);
+      }}
+      .hero .row {{
+        display:flex; align-items:center; gap:14px;
+      }}
+      .hero .brand {{
+        display:flex; align-items:center; gap:10px;
+      }}
+      .hero .title {{
+        font-weight: 900; letter-spacing:.2px;
+        font-size: 1.6rem; margin: 0; color: var(--ink);
+      }}
+      .hero .tagline {{
+        margin: 2px 0 0 0; font-size: .98rem; color: #5a6a5c;
+      }}
+
+      /* Metric “pills” (Users / Tools / …) */
+      .pill {{
+        background: var(--card);
+        border: 1px solid var(--stroke);
+        border-radius: 14px;
+        padding: 10px 14px;
+        text-align: center;
+        box-shadow: 0 3px 12px rgba(26,58,34,0.05);
+      }}
+      .pill .k {{
+        font-size: 1.15rem; font-weight: 800; color: var(--ink);
+      }}
+      .pill .lbl {{
+        font-size: .78rem; color: #6a776a; margin-top:2px;
+      }}
+
+      /* Inputs & buttons */
+      .stTextInput>div>div>input,
+      .stTextArea textarea,
+      .stSelectbox div[data-baseweb="select"] > div,
+      .stDateInput input {{
+        background: white;
+        border-radius: 10px;
+        border: 1px solid var(--stroke);
+        box-shadow: 0 2px 6px rgba(26,58,34,0.04) inset;
+      }}
+      .stTextInput>div>div>input:focus,
+      .stTextArea textarea:focus,
+      .stSelectbox div[data-baseweb="select"] > div:focus-within,
+      .stDateInput input:focus {{
+        outline: none !important;
+        border-color: var(--leaf);
+        box-shadow: 0 0 0 3px rgba(155,203,143,0.35);
+      }}
+      .stButton>button {{
+        background: var(--green);
+        color: white; border-radius: 10px; border: 0;
+        padding: 0.55rem 0.9rem; font-weight: 700;
+        box-shadow: 0 6px 14px rgba(47,109,58,.18);
+      }}
+      .stButton>button:hover {{ background: var(--teal); }}
+
+      /* Cards/containers look like Option-A */
+      .st-emotion-cache-1r6slb0, .st-emotion-cache-16idsys {{
+        background: var(--card);
+        border: 1px solid var(--stroke);
+        border-radius: 14px;
+        box-shadow: 0 8px 22px rgba(26,58,34,.05);
+      }}
+
+      /* Tabs underline accent */
+      button[role="tab"][aria-selected="true"] {{
+        border-bottom: 3px solid var(--green) !important;
+      }}
+
+      /* Sidebar polish */
+      [data-testid="stSidebar"] {{
+        background: linear-gradient(180deg, rgba(155,203,143,0.12), rgba(233,240,230,0.6));
+        border-right: 1px solid var(--stroke);
+      }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -132,6 +209,7 @@ CREATE TABLE IF NOT EXISTS reviews (
     rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
     comment TEXT,
     created_at TEXT NOT NULL,
+    /* NOTE: keeping your original FKs to avoid migration surprises */
     FOREIGN KEY(tool_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY(reviewer_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -163,7 +241,7 @@ def create_user(name: str, email: str, password: str, location: str = "") -> Tup
             )
         return True, "Account created! You can log in now."
     except sqlite3.IntegrityError:
-        return False, "Email already registered. Try logging in."
+        return False, "E-mail/Phone already registered. Try logging in."
     finally:
         conn.close()
 
@@ -215,6 +293,7 @@ def add_tool(owner_id: int, name: str, description: str, category: str, daily_pr
     return tool_id
 
 def list_tools(keyword: str = "", category: str = "", location: str = "") -> List[sqlite3.Row]:
+    """SQL filter that matches keyword against NAME or DESCRIPTION + category + location."""
     kw  = f"%{(keyword or '').lower().strip()}%"
     cat = f"%{(category or '').lower().strip()}%" if category else "%"
     loc = f"%{(location or '').lower().strip()}%" if location else "%"
@@ -305,6 +384,7 @@ def get_user_bookings(user_id: int) -> List[sqlite3.Row]:
         conn.close()
 
 def cancel_booking(booking_id: int, user_id: int) -> Tuple[bool, str]:
+    """Borrower can cancel their own confirmed booking."""
     conn = get_conn()
     try:
         row = conn.execute("SELECT borrower_id, status FROM bookings WHERE id=?", (booking_id,)).fetchone()
@@ -321,6 +401,7 @@ def cancel_booking(booking_id: int, user_id: int) -> Tuple[bool, str]:
         conn.close()
 
 def has_future_confirmed_bookings(tool_id: int) -> bool:
+    """Block deletion if any upcoming confirmed bookings exist for this tool."""
     today = date.today().isoformat()
     conn = get_conn()
     try:
@@ -337,6 +418,7 @@ def has_future_confirmed_bookings(tool_id: int) -> bool:
         conn.close()
 
 def delete_tool(tool_id: int, owner_id: int) -> Tuple[bool, str]:
+    """Owner can delete their own tool if no future confirmed bookings exist."""
     conn = get_conn()
     try:
         tool = conn.execute("SELECT owner_id FROM tools WHERE id=?", (tool_id,)).fetchone()
@@ -377,6 +459,7 @@ def get_tool_reviews(tool_id: int) -> pd.DataFrame:
         conn.close()
 
 def get_metrics() -> tuple[int, int, int, int]:
+    """Return (users, tools, bookings, reviews) counts. Safe on first run."""
     init_db()
     conn = get_conn()
     try:
@@ -467,48 +550,6 @@ def rank_tools(tools: list[sqlite3.Row], job_text: str, start, end) -> list[tupl
     ranked.sort(key=lambda x: x[1], reverse=True)
     return ranked
 
-# ------------------ Universal job matcher ------------------
-def _simple_tokens(text: str) -> list[str]:
-    if not text:
-        return []
-    text = text.lower()
-    return re.findall(r"[a-z0-9]+", text)
-
-def _variants(word: str) -> set[str]:
-    v = {word}
-    if word.endswith("es"):
-        v.add(word[:-2])
-    if word.endswith("s") and len(word) > 3:
-        v.add(word[:-1])
-    if not word.endswith("s"):
-        v.add(word + "s")
-    return v
-
-_SYNONYMS = {
-    "bbq": {"barbecue", "barbeque", "grill"},
-    "barbecue": {"bbq", "barbeque", "grill"},
-    "barbeque": {"bbq", "barbecue", "grill"},
-    "lawnmower": {"mower"},
-    "mower": {"lawnmower"},
-    "weed": {"weedeater", "weedwhacker", "stringtrimmer", "trimmer"},
-    "trimmer": {"stringtrimmer", "strimmer"},
-}
-
-def _expand(words: list[str]) -> set[str]:
-    out = set()
-    for w in words:
-        out |= _variants(w)
-        if w in _SYNONYMS:
-            out |= _SYNONYMS[w]
-    return out
-
-def job_matches(tool: sqlite3.Row, job_text: str) -> bool:
-    if not job_text or not job_text.strip():
-        return True
-    q_tokens = _expand(_simple_tokens(job_text))
-    hay_text = f"{tool['name']} {(tool['description'] or '')} {(tool['category'] or '')}".lower()
-    return any(tok in hay_text for tok in q_tokens if len(tok) >= 2)
-
 # ------------------ UI helpers ------------------
 def reviews_summary(tool_id: int) -> str:
     df = get_tool_reviews(tool_id)
@@ -563,22 +604,31 @@ def main():
         st.rerun()
 
     # ===== Hero =====
-    left, right = st.columns([1, 5], vertical_alignment="center")
-    with left:
+    greet = ""
+    if st.session_state.get("user"):
+        first = (st.session_state["user"]["name"] or "").split(" ")[0]
+        greet = f"Hi, {first} 👋 — "
+
+    col_logo, col_main = st.columns([1, 6], vertical_alignment="center")
+
+    with col_logo:
         if os.path.exists("logo.png"):
             st.image("logo.png", use_container_width=True)
         else:
             st.write("🧰")
-    with right:
+
+    with col_main:
         st.markdown(
             f"""
             <div class="hero">
-                <div class="title">{APP_NAME}</div>
+                <div class="title">{greet}{APP_NAME}</div>
                 <div class="tagline">{TAGLINE}</div>
             </div>
-            """, unsafe_allow_html=True
+            """,
+            unsafe_allow_html=True
         )
-        # Live metrics row (users / tools / bookings / reviews)
+
+        # Live metrics row
         try:
             m_users, m_tools, m_bookings, m_reviews = get_metrics()
             mc1, mc2, mc3, mc4 = st.columns(4)
@@ -640,6 +690,7 @@ def main():
                         (st.success if ok else st.error)(msg)
 
         st.divider()
+        # Admin-only DB reset
         if st.session_state.get("user") and st.session_state["user"]["email"] == ADMIN_EMAIL:
             if st.button("🗑 Reset local database (admin)"):
                 try:
@@ -713,14 +764,12 @@ def main():
                             st.error("Sorry, those dates just got taken.")
                 st.divider()
 
-    # -------- List a Tool (fixed) --------
+    # -------- List a Tool (fixed single-click submit) --------
     with tab_list:
         st.subheader("List a tool or appliance")
-
         if not st.session_state.get("user"):
             st.warning("Please log in to list a tool.")
         else:
-            # Unique keys; submit handled OUTSIDE the form
             with st.form(key="list_form_v2", clear_on_submit=True):
                 name  = st.text_input("Tool name *", placeholder="e.g., Hammer Drill")
                 desc  = st.text_area("Description", placeholder="Add details, condition, size, etc.")
@@ -733,7 +782,6 @@ def main():
 
                 submitted = st.form_submit_button("Publish listing", key="publish_btn_v2")
 
-            # Handle submit (single click) here
             if submitted:
                 errors = []
                 if not name: errors.append("Tool name")
@@ -754,7 +802,6 @@ def main():
                             afrom or None, ato or None, img_bytes
                         )
                         st.success(f"Listed! Your tool ID is {_id}.")
-                        # trigger clean rerender (prevents double publish and cleans the form)
                         st.session_state["after_publish_refresh"] = True
                         st.rerun()
                     except Exception as e:
