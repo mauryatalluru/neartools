@@ -9,8 +9,10 @@
 # - Owners can delete their own listings (blocked if future confirmed bookings exist)
 # - Borrowers can cancel their own bookings (status -> canceled)
 # - Live metrics row (users / tools / bookings / reviews)
-# - Clean branding + big logo hero
-# - FIX: no "double publish" on the List form, no tab name errors
+# - FIXES:
+#   * No “form_name cannot be modified” error (unique keys + submit handled outside the form)
+#   * No double-click to publish (single click publishes, we trigger a clean rerun)
+#   * Login/Signup field label changed to “E-mail or Phone Number”
 
 import os
 import re
@@ -554,11 +556,11 @@ def main():
         if row:
             st.session_state["user"] = dict(row)
 
-    # one-shot guard to prevent double publish
-    st.session_state.setdefault("just_published_tool", False)
-    if st.session_state.get("just_published_tool"):
-        # clear on fresh render; the guard only blocks the immediate rerun
-        st.session_state["just_published_tool"] = False
+    # flag only used to trigger a clean rerun after publishing
+    st.session_state.setdefault("after_publish_refresh", False)
+    if st.session_state.get("after_publish_refresh"):
+        st.session_state["after_publish_refresh"] = False
+        st.rerun()
 
     # ===== Hero =====
     left, right = st.columns([1, 5], vertical_alignment="center")
@@ -609,7 +611,7 @@ def main():
             login_tab, signup_tab = st.tabs(["Log in", "Sign up"])
 
             with login_tab:
-                l_email = st.text_input("Email", key="login_email")
+                l_email = st.text_input("E-mail or Phone Number", key="login_email")
                 l_pw    = st.text_input("Password", type="password", key="login_pw")
                 if st.button("Log in"):
                     u = verify_user(l_email, l_pw)
@@ -620,11 +622,11 @@ def main():
                         st.success("Logged in!")
                         st.rerun()
                     else:
-                        st.error("Invalid email or password.")
+                        st.error("Invalid credentials.")
 
             with signup_tab:
                 s_name  = st.text_input("Full name")
-                s_email = st.text_input("Email")
+                s_email = st.text_input("E-mail or Phone Number")
                 s_loc   = st.text_input("Location (City or ZIP)")
                 s_pw1   = st.text_input("Password", type="password", key="pw1")
                 s_pw2   = st.text_input("Confirm password", type="password", key="pw2")
@@ -711,66 +713,50 @@ def main():
                             st.error("Sorry, those dates just got taken.")
                 st.divider()
 
-    # -------- List a Tool --------
+    # -------- List a Tool (fixed) --------
     with tab_list:
         st.subheader("List a tool or appliance")
+
         if not st.session_state.get("user"):
             st.warning("Please log in to list a tool.")
         else:
-           with st.form("list_tool_form", clear_on_submit=False):
+            # Unique keys; submit handled OUTSIDE the form
+            with st.form(key="list_form_v2", clear_on_submit=True):
+                name  = st.text_input("Tool name *", placeholder="e.g., Hammer Drill")
+                desc  = st.text_area("Description", placeholder="Add details, condition, size, etc.")
+                cat   = st.text_input("Category", placeholder="e.g., drill, ladder, saw…")
+                price = st.number_input("Daily price (USD) *", min_value=1.0, step=1.0)
+                loc   = st.text_input("Location (City or ZIP) *")
+                afrom = st.date_input("Available from", value=None, key="afrom")
+                ato   = st.date_input("Available to", value=None, key="ato")
+                img   = st.file_uploader("Photo (JPG/PNG)", type=["jpg", "jpeg", "png"])
 
-            # Give fields explicit keys so we can reset them later
-               name = st.text_input("Tool name *", placeholder="e.g., Hammer Drill", key="form_name")
-               desc = st.text_area("Description", placeholder="Add details, condition, size, etc.", key="form_desc")
-               cat  = st.text_input("Category", placeholder="e.g., drill, ladder, saw…", key="form_cat")
-               price = st.number_input("Daily price (USD) *", min_value=1.0, step=1.0, key="form_price")
-               loc   = st.text_input("Location (City or ZIP) *", key="form_loc")
-               afrom = st.date_input("Available from", value=None, key="form_afrom")
-               ato   = st.date_input("Available to", value=None, key="form_ato")
+                submitted = st.form_submit_button("Publish listing", key="publish_btn_v2")
 
-            # Persist the uploaded file bytes so a rerun doesn't lose it
-               img = st.file_uploader("Photo (JPG/PNG)", type=["jpg", "jpeg", "png"], key="form_img")
-               if img is not None:
-                st.session_state["form_img_bytes"] = img.getvalue()
-
-               submitted = st.form_submit_button("Publish listing")
-
-               if submitted:
-                # Minimal validation (keeps the user’s inputs on screen)
-                problems = []
-                if not name: problems.append("Tool name")
-                if not loc:  problems.append("Location")
+            # Handle submit (single click) here
+            if submitted:
+                errors = []
+                if not name: errors.append("Tool name")
+                if not loc: errors.append("Location")
                 try:
                     price_ok = float(price) >= 1.0
                 except Exception:
                     price_ok = False
-                if not price_ok: problems.append("Daily price (≥ 1)")
+                if not price_ok: errors.append("Daily price (>= 1)")
 
-                if problems:
-                    st.error("Please fill: " + ", ".join(problems))
+                if errors:
+                    st.error("Please fill: " + ", ".join(errors))
                 else:
                     try:
-                        img_bytes = st.session_state.get("form_img_bytes")
+                        img_bytes = img.read() if img else None
                         _id = add_tool(
                             st.session_state["user"]["id"], name, desc, cat, price, loc,
                             afrom or None, ato or None, img_bytes
                         )
                         st.success(f"Listed! Your tool ID is {_id}.")
-
-                        # Clear the form ONLY AFTER success
-                        st.session_state.update({
-                            "form_name": "",
-                            "form_desc": "",
-                            "form_cat": "",
-                            "form_price": 1.0,
-                            "form_loc": "",
-                            "form_afrom": None,
-                            "form_ato": None,
-                            "form_img": None,
-                        })
-                        st.session_state.pop("form_img_bytes", None)
-
-                        st.rerun()  # refresh to show the new listing in "Your listings"
+                        # trigger clean rerender (prevents double publish and cleans the form)
+                        st.session_state["after_publish_refresh"] = True
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Couldn't publish: {e}")
 
