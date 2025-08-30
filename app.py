@@ -1228,20 +1228,27 @@ def main():
         if not st.session_state.get("user"):
             st.warning("Please log in to list a tool.")
         else:
-            # (B) Render the form
-            with st.form(key="list_form_streamlit_cloud_safe", clear_on_submit=True):
-                name  = st.text_input("Tool name *", placeholder="e.g., Hammer Drill")
-                desc  = st.text_area("Description", placeholder="Add details, condition, size, etc.")
-                cat   = st.text_input("Category", placeholder="e.g., drill, ladder, saw…")
-                price = st.number_input("Daily price (USD) *", min_value=1.0, step=1.0)
-                loc   = st.text_input("Location (City or ZIP) *")
-                afrom = st.date_input("Available from", value=None, key="afrom")
-                ato   = st.date_input("Available to", value=None, key="ato")
-                img   = st.file_uploader("Photo (JPG/PNG)", type=["jpg", "jpeg", "png"])
-                submitted = st.form_submit_button("Publish listing")
+            # Reset submitting flag when form is loaded
+            if "submitting" not in st.session_state:
+                st.session_state["submitting"] = False
+            # (B) Render the form with better submission handling
+            with st.form(key=f"list_form_{st.session_state['user']['id']}", clear_on_submit=False):
+                name  = st.text_input("Tool name *", placeholder="e.g., Hammer Drill", key=f"name_{st.session_state['user']['id']}")
+                desc  = st.text_area("Description", placeholder="Add details, condition, size, etc.", key=f"desc_{st.session_state['user']['id']}")
+                cat   = st.text_input("Category", placeholder="e.g., drill, ladder, saw…", key=f"cat_{st.session_state['user']['id']}")
+                price = st.number_input("Daily price (USD) *", min_value=1.0, step=1.0, key=f"price_{st.session_state['user']['id']}")
+                loc   = st.text_input("Location (City or ZIP) *", key=f"loc_{st.session_state['user']['id']}")
+                afrom = st.date_input("Available from", value=None, key=f"afrom_{st.session_state['user']['id']}")
+                ato   = st.date_input("Available to", value=None, key=f"ato_{st.session_state['user']['id']}")
+                img   = st.file_uploader("Photo (JPG/PNG)", type=["jpg", "jpeg", "png"], key=f"img_{st.session_state['user']['id']}")
+                submitted = st.form_submit_button(
+                    "🔄 Publishing..." if st.session_state.get("submitting", False) else "Publish listing",
+                    disabled=st.session_state.get("submitting", False)
+                )
 
-            # (C) Handle form submission directly
-            if submitted:
+            # (C) Handle form submission with proper state management
+            if submitted and not st.session_state.get("submitting", False):
+                st.session_state["submitting"] = True
                 problems = []
                 if not name: problems.append("Tool name")
                 if not loc:  problems.append("Location")
@@ -1266,9 +1273,13 @@ def main():
                             ato or None,
                             (img.read() if img else None),
                         )
-                        st.success(f"Listed! Your tool ID is {_id}.")
+                        st.success(f"✅ Tool successfully listed! Your tool ID is {_id}.")
+                        # Reset submitting flag and clear form after successful submission
+                        st.session_state["submitting"] = False
+                        st.rerun()
                     except Exception as e:
-                        st.error(f"Couldn't publish: {e}")
+                        st.error(f"❌ Couldn't publish: {e}")
+                        st.session_state["submitting"] = False
 
         st.markdown("### Your listings")
         if st.session_state.get("user"):
