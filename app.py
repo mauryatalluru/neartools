@@ -18,78 +18,558 @@ import streamlit as st
 import pandas as pd
 from streamlit_cookies_manager import EncryptedCookieManager
 
-# ------------------ Branding ------------------
+# ------------------ Professional Startup Branding ------------------
 APP_NAME = "NearTools"
 TAGLINE  = "Own less. Do more."
 
+# Professional startup color palette
 PALETTE = {
-    "green":  "#2F6D3A",   # primary
-    "leaf":   "#9BCB8F",   # accent
-    "teal":   "#39A68C",   # hover
-    "orange": "#F2B266",   # secondary
-    "ink":    "#1E2A1C",   # headings
-    "card":   "#F6F8F4",   # card surface
-    "bg":     "#E9F0E6",   # page background
-    "stroke": "#DCE5D8",   # borders
+    "primary": "#2563EB",     # Professional blue
+    "secondary": "#7C3AED",   # Purple accent
+    "success": "#10B981",     # Success green
+    "warning": "#F59E0B",     # Warning amber
+    "danger": "#EF4444",      # Error red
+    "dark": "#1F2937",        # Dark text
+    "light": "#F9FAFB",       # Light background
+    "white": "#FFFFFF",       # Pure white
+    "gray": "#6B7280",        # Secondary text
+    "border": "#E5E7EB",      # Borders
+    "card": "#FFFFFF",        # Card background
+    "hover": "#3B82F6",       # Hover state
 }
 
 def inject_css():
     st.markdown(f"""
     <style>
+      /* Professional Startup CSS Framework */
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+      
       :root {{
-        --bg: {PALETTE["bg"]};
+        --primary: {PALETTE["primary"]};
+        --secondary: {PALETTE["secondary"]};
+        --success: {PALETTE["success"]};
+        --warning: {PALETTE["warning"]};
+        --danger: {PALETTE["danger"]};
+        --dark: {PALETTE["dark"]};
+        --light: {PALETTE["light"]};
+        --white: {PALETTE["white"]};
+        --gray: {PALETTE["gray"]};
+        --border: {PALETTE["border"]};
         --card: {PALETTE["card"]};
-        --stroke: {PALETTE["stroke"]};
-        --ink: {PALETTE["ink"]};
-        --green: {PALETTE["green"]};
-        --leaf: {PALETTE["leaf"]};
-        --teal: {PALETTE["teal"]};
-        --orange: {PALETTE["orange"]};
+        --hover: {PALETTE["hover"]};
       }}
+      
+      /* Base Styling */
       html, body, [data-testid="stAppViewContainer"] {{
-        background: var(--bg);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        position: relative;
+        min-height: 100vh;
+        overflow-y: auto !important;
+        overflow-x: visible !important;
       }}
-      .hero {{
-        background: linear-gradient(90deg, rgba(155,203,143,.20) 0%,
-                                         rgba(57,166,140,.14) 60%,
-                                         rgba(242,178,102,.12) 100%);
-        border: 1px solid var(--stroke);
-        border-radius: 22px;
-        padding: 16px 20px;
-        margin: 8px 0 16px 0;
-        box-shadow: 0 8px 24px rgba(26, 58, 34, .06);
+      
+      /* Ensure scrolling works */
+      [data-testid="stAppViewContainer"] {{
+        overflow-y: auto !important;
+        overflow-x: visible !important;
       }}
-      .hero .title {{ font-weight: 900; letter-spacing: .2px; font-size: 1.6rem; margin: 0; color: var(--ink); }}
-      .hero .tagline {{ margin: 2px 0 0 0; font-size: .98rem; color: #5a6a5c; }}
-      .pill {{
-        background: var(--card); border: 1px solid var(--stroke); border-radius: 14px;
-        padding: 10px 14px; text-align: center; box-shadow: 0 3px 12px rgba(26,58,34,.05);
+      
+      .main .block-container {{
+        overflow-y: auto !important;
+        overflow-x: visible !important;
       }}
-      .pill .k {{ font-size: 1.15rem; font-weight: 800; color: var(--ink); }}
-      .pill .lbl {{ font-size: .78rem; color: #6a776a; margin-top:2px; }}
+      
+      /* Professional Hero Section */
+      .hero-section {{
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+        color: white;
+        padding: 4rem 2rem;
+        margin: -2rem -1rem 3rem -1rem;
+        text-align: center;
+        border-radius: 0;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      }}
+      
+      .hero-section::before {{
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: 
+          radial-gradient(circle at 30% 70%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+          radial-gradient(circle at 70% 30%, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
+        pointer-events: none;
+        animation: heroGlow 8s ease-in-out infinite;
+      }}
+      
+      @keyframes heroGlow {{
+        0%, 100% {{ opacity: 0.3; }}
+        50% {{ opacity: 0.6; }}
+      }}
+      
+      .hero-content {{
+        max-width: 900px;
+        margin: 0 auto;
+      }}
+      
+      .hero-title {{
+        font-size: 3rem;
+        font-weight: 900;
+        margin-bottom: 1rem;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+        color: white;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      }}
+      
+      .hero-subtitle {{
+        font-size: 1.25rem;
+        margin-bottom: 2rem;
+        font-weight: 400;
+        color: white;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+      }}
+      
+      .hero-stats {{
+        display: flex;
+        gap: 2rem;
+        justify-content: center;
+        margin-top: 2rem;
+        flex-wrap: wrap;
+      }}
+      
+      .hero-stat {{
+        text-align: center;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 16px;
+        padding: 1.5rem 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        transition: all 0.3s ease;
+        animation: statFloat 6s ease-in-out infinite;
+      }}
+      
+      .hero-stat:nth-child(1) {{ animation-delay: 0s; }}
+      .hero-stat:nth-child(2) {{ animation-delay: 1s; }}
+      .hero-stat:nth-child(3) {{ animation-delay: 2s; }}
+      .hero-stat:nth-child(4) {{ animation-delay: 3s; }}
+      
+      .hero-stat:hover {{
+        transform: translateY(-8px) scale(1.05);
+        background: rgba(255, 255, 255, 0.2);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+      }}
+      
+      @keyframes statFloat {{
+        0%, 100% {{ transform: translateY(0px); }}
+        50% {{ transform: translateY(-10px); }}
+      }}
+      
+      .hero-stat-number {{
+        font-size: 2.5rem;
+        font-weight: 900;
+        display: block;
+        background: linear-gradient(45deg, #fff, #f0f0f0);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 0.5rem;
+      }}
+      
+      .hero-stat-label {{
+        font-size: 0.875rem;
+        opacity: 0.9;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }}
+      
+      /* Professional Forms */
       .stTextInput>div>div>input,
       .stTextArea textarea,
       .stSelectbox div[data-baseweb="select"]>div,
-      .stDateInput input {{
-        background: white; border-radius: 10px; border: 1px solid var(--stroke);
-        box-shadow: inset 0 2px 6px rgba(26,58,34,.04);
+      .stDateInput input,
+      .stNumberInput input {{
+        background: rgba(255, 255, 255, 0.98) !important;
+        backdrop-filter: blur(10px) !important;
+        border: 2px solid rgba(0, 0, 0, 0.2) !important;
+        border-radius: 12px !important;
+        padding: 1rem !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.875rem !important;
+        color: #000000 !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1) !important;
+        font-weight: 600 !important;
       }}
+      
       .stTextInput>div>div>input:focus,
       .stTextArea textarea:focus,
       .stSelectbox div[data-baseweb="select"]>div:focus-within,
-      .stDateInput input:focus {{
-        outline: none !important; border-color: var(--leaf);
-        box-shadow: 0 0 0 3px rgba(155,203,143,.35);
+      .stDateInput input:focus,
+      .stNumberInput input:focus {{
+        outline: none !important;
+        border-color: #667eea !important;
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15), 0 8px 30px rgba(102, 126, 234, 0.2) !important;
+        background: rgba(255, 255, 255, 0.98) !important;
+        transform: translateY(-2px) !important;
       }}
+      
+      .stTextInput>div>div>input:hover,
+      .stTextArea textarea:hover,
+      .stSelectbox div[data-baseweb="select"]>div:hover,
+      .stDateInput input:hover,
+      .stNumberInput input:hover {{
+        border-color: #9CA3AF !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 6px 25px rgba(0, 0, 0, 0.12) !important;
+      }}
+      
+      /* Professional Buttons */
       .stButton>button {{
-        background: var(--green); color: white; border-radius: 10px; border: 0;
-        padding: .55rem .9rem; font-weight: 700; box-shadow: 0 6px 14px rgba(47,109,58,.18);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 12px !important;
+        padding: 1rem 2rem !important;
+        font-weight: 700 !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.875rem !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3) !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+        position: relative !important;
+        overflow: hidden !important;
       }}
-      .stButton>button:hover {{ background: var(--teal); }}
-      button[role="tab"][aria-selected="true"] {{ border-bottom: 3px solid var(--green) !important; }}
+      
+      .stButton>button::before {{
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        transition: left 0.5s ease;
+      }}
+      
+      .stButton>button:hover::before {{
+        left: 100%;
+      }}
+      
+      .stButton>button:hover {{
+        background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%) !important;
+        transform: translateY(-3px) scale(1.02) !important;
+        box-shadow: 0 15px 35px rgba(102, 126, 234, 0.4) !important;
+      }}
+      
+      .stButton>button:active {{
+        transform: translateY(-1px) scale(0.98) !important;
+        transition: all 0.1s ease !important;
+      }}
+      
+      /* Professional Tabs */
+      .stTabs [data-baseweb="tab-list"] {{
+        gap: 0.5rem;
+        background: rgba(255, 255, 255, 0.95) !important;
+        backdrop-filter: blur(15px) !important;
+        border-radius: 16px !important;
+        padding: 0.75rem !important;
+        border: 1px solid rgba(255, 255, 255, 0.3) !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
+      }}
+      
+      .stTabs [data-baseweb="tab"] {{
+        background: transparent !important;
+        border-radius: 12px !important;
+        color: #374151 !important;
+        font-weight: 600 !important;
+        font-family: 'Inter', sans-serif !important;
+        padding: 1rem 1.5rem !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        position: relative !important;
+        overflow: hidden !important;
+      }}
+      
+      .stTabs [data-baseweb="tab"]:hover {{
+        background: rgba(102, 126, 234, 0.1) !important;
+        color: #667eea !important;
+        transform: translateY(-2px) !important;
+      }}
+      
+      .stTabs [data-baseweb="tab"][aria-selected="true"] {{
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4) !important;
+        transform: translateY(-2px) !important;
+      }}
+      
+      .stTabs [data-baseweb="tab"][aria-selected="true"]::before {{
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 20px;
+        height: 3px;
+        background: rgba(255, 255, 255, 0.8);
+        border-radius: 2px;
+        animation: tabIndicator 0.3s ease-out;
+      }}
+      
+      @keyframes tabIndicator {{
+        from {{ width: 0; opacity: 0; }}
+        to {{ width: 20px; opacity: 1; }}
+      }}
+      
+      /* Professional Sidebar */
       [data-testid="stSidebar"] {{
-        background: linear-gradient(180deg, rgba(155,203,143,.12), rgba(233,240,230,.6));
-        border-right: 1px solid var(--stroke);
+        background: linear-gradient(180deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%) !important;
+        backdrop-filter: blur(20px) !important;
+        border-right: 2px solid rgba(255, 255, 255, 0.2) !important;
+        box-shadow: 5px 0 20px rgba(31, 38, 135, 0.15) !important;
+        overflow-y: auto !important;
+        overflow-x: visible !important;
+      }}
+      
+      /* Ensure sidebar content can scroll */
+      [data-testid="stSidebar"] > div {{
+        overflow-y: auto !important;
+        overflow-x: visible !important;
+        height: 100vh !important;
+      }}
+      
+      /* Fix sidebar scrolling container */
+      [data-testid="stSidebar"] .css-1d391kg {{
+        overflow-y: auto !important;
+        overflow-x: visible !important;
+      }}
+      
+      /* Sidebar content styling */
+      [data-testid="stSidebar"] .stMarkdown {{
+        color: #000000 !important;
+      }}
+      
+      [data-testid="stSidebar"] h3 {{
+        color: #1e40af !important;
+        font-weight: 700 !important;
+      }}
+      
+      [data-testid="stSidebar"] .stSuccess {{
+        background: rgba(16, 185, 129, 0.1) !important;
+        border: 1px solid rgba(16, 185, 129, 0.3) !important;
+        color: #065f46 !important;
+      }}
+      
+      /* Professional Cards */
+      .pro-card {{
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.85) 100%);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 20px;
+        padding: 2rem;
+        margin: 1.5rem 0;
+        box-shadow: 0 12px 40px rgba(31, 38, 135, 0.15);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+        animation: cardEntrance 0.6s ease-out;
+      }}
+      
+      .pro-card:nth-child(1) {{ animation-delay: 0.1s; }}
+      .pro-card:nth-child(2) {{ animation-delay: 0.2s; }}
+      .pro-card:nth-child(3) {{ animation-delay: 0.3s; }}
+      
+      @keyframes cardEntrance {{
+        from {{ 
+          opacity: 0; 
+          transform: translateY(30px) scale(0.95); 
+        }}
+        to {{ 
+          opacity: 1; 
+          transform: translateY(0) scale(1); 
+        }}
+      }}
+      
+      .pro-card::before {{
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+        transition: left 0.6s ease;
+      }}
+      
+      .pro-card:hover::before {{
+        left: 100%;
+      }}
+      
+      .pro-card:hover {{
+        box-shadow: 0 25px 60px rgba(31, 38, 135, 0.25);
+        transform: translateY(-12px) scale(1.03);
+        border-color: rgba(102, 126, 234, 0.3);
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.9) 100%);
+      }}
+      
+      .pro-card:active {{
+        transform: translateY(-6px) scale(1.01);
+        transition: all 0.1s ease;
+      }}
+      
+      .pro-card-header {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+      }}
+      
+      .pro-card-title {{
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--dark);
+        margin: 0;
+      }}
+      
+      .pro-card-badge {{
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 25px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }}
+      
+      /* Enhanced Success/Error States */
+      .stSuccess {{
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%) !important;
+        border: 2px solid rgba(16, 185, 129, 0.3) !important;
+        border-radius: 12px !important;
+        color: #065f46 !important;
+        padding: 1rem !important;
+        backdrop-filter: blur(10px) !important;
+        animation: successPulse 0.6s ease-out !important;
+      }}
+      
+      .stError {{
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%) !important;
+        border: 2px solid rgba(239, 68, 68, 0.3) !important;
+        border-radius: 12px !important;
+        color: #991b1b !important;
+        padding: 1rem !important;
+        backdrop-filter: blur(10px) !important;
+        animation: errorShake 0.6s ease-out !important;
+      }}
+      
+      @keyframes successPulse {{
+        0% {{ transform: scale(0.95); opacity: 0; }}
+        50% {{ transform: scale(1.02); }}
+        100% {{ transform: scale(1); opacity: 1; }}
+      }}
+      
+      @keyframes errorShake {{
+        0%, 100% {{ transform: translateX(0); }}
+        25% {{ transform: translateX(-5px); }}
+        75% {{ transform: translateX(5px); }}
+      }}
+      
+      /* Enhanced Info/Warning States */
+      .stInfo {{
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%) !important;
+        border: 2px solid rgba(59, 130, 246, 0.3) !important;
+        border-radius: 12px !important;
+        color: #1e40af !important;
+        padding: 1rem !important;
+        backdrop-filter: blur(10px) !important;
+      }}
+      
+      .stWarning {{
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%) !important;
+        border: 2px solid rgba(245, 158, 11, 0.3) !important;
+        border-radius: 12px !important;
+        color: #92400e !important;
+        padding: 1rem !important;
+        backdrop-filter: blur(10px) !important;
+      }}
+      
+      /* Loading Animation */
+      .loading-dots {{
+        display: inline-block;
+        position: relative;
+        width: 20px;
+        height: 20px;
+      }}
+      
+      .loading-dots::after {{
+        content: '';
+        display: block;
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #667eea;
+        animation: loadingDots 1.2s linear infinite;
+      }}
+      
+      @keyframes loadingDots {{
+        0% {{ left: 0; opacity: 1; }}
+        50% {{ left: 12px; opacity: 0.5; }}
+        100% {{ left: 24px; opacity: 1; }}
+      }}
+      
+      /* Enhanced Typography */
+      h1, h2, h3, h4, h5, h6 {{
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.025em !important;
+        line-height: 1.2 !important;
+      }}
+      
+      /* Smooth Scrolling - Disabled to fix scrolling issues */
+      html {{
+        scroll-behavior: auto;
+      }}
+      
+      /* Selection Styling */
+      ::selection {{
+        background: rgba(102, 126, 234, 0.3);
+        color: #1f2937;
+      }}
+      
+      /* Enhanced Logo Display - High Quality */
+      [data-testid="stImage"] img {{
+        image-rendering: -webkit-optimize-contrast !important;
+        image-rendering: auto !important;
+        filter: contrast(1.1) brightness(1.05) !important;
+        border-radius: 8px !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        background: transparent !important;
+        padding: 4px !important;
+        transition: all 0.3s ease !important;
+      }}
+      
+      [data-testid="stImage"] img:hover {{
+        transform: scale(1.05) !important;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25) !important;
+        filter: contrast(1.4) brightness(1.15) saturate(1.3) !important;
+      }}
+      
+      /* Logo container styling - Clean and Simple */
+      .logo-container {{
+        background: transparent !important;
+        border-radius: 8px !important;
+        padding: 4px !important;
       }}
     </style>
     """, unsafe_allow_html=True)
@@ -494,21 +974,48 @@ def reviews_summary(tool_id: int) -> str:
     return f"⭐ {avg:.1f} from {len(df)} review(s)"
 
 def tool_card(tool: sqlite3.Row):
-    with st.container(border=True):
-        c0, c1, c2 = st.columns([1, 2, 2])
-        with c0:
+    """Professional tool card with modern startup design"""
+    with st.container():
+        # Create a professional card layout
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
             if tool["image_path"] and os.path.exists(tool["image_path"]):
-                st.image(tool["image_path"], width="stretch")
+                st.image(tool["image_path"], width=250)
             else:
-                st.write("🧰")
-        with c1:
-            st.subheader(tool["name"])
-            st.write(f"**Category:** {tool['category'] or '—'}  \n**Location:** {tool['location']}")
-            st.write(tool["description"] or "No description.")
-            st.write(f"**Daily price:** ${tool['daily_price']:.2f}")
-            st.caption(reviews_summary(tool["id"]))
-        with c2:
-            st.write(f"**Owner:** {tool['owner_name']}  \n**Email:** {tool['owner_email']}")
+                st.markdown("""
+                <div style="width: 250px; height: 180px; background: var(--light); 
+                            border: 1px solid var(--border); border-radius: 8px; 
+                            display: flex; align-items: center; justify-content: center;
+                            font-size: 3rem; color: var(--gray);">
+                    🧰
+                </div>
+                """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="pro-card">
+                <div class="pro-card-header">
+                    <h3 class="pro-card-title">{tool['name']}</h3>
+                    <span class="pro-card-badge">${tool['daily_price']:.2f}/day</span>
+                </div>
+                <div style="color: var(--gray); margin-bottom: 1rem; font-size: 0.875rem;">
+                    📍 {tool['location']} • {tool['category'] or 'Uncategorized'}
+                </div>
+                <p style="color: var(--dark); margin-bottom: 1rem; line-height: 1.5;">
+                    {tool['description'] or 'No description available.'}
+                </p>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 1rem; border-top: 1px solid var(--border);">
+                    <div style="color: var(--gray); font-size: 0.875rem;">
+                        <strong style="color: var(--dark);">{tool['owner_name']}</strong><br>
+                        {tool['owner_email']}
+                    </div>
+                    <div style="color: var(--gray); font-size: 0.875rem; text-align: right;">
+                        {reviews_summary(tool["id"])}
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
 # ------------------ App ------------------
 def main():
@@ -551,23 +1058,33 @@ def main():
     with col_main:
         st.markdown(
             f"""
-            <div class="hero">
-                <div class="title">{greet}{APP_NAME}</div>
-                <div class="tagline">{TAGLINE}</div>
+            <div class="hero-section">
+                <div class="hero-content">
+                    <div class="hero-title">{greet}{APP_NAME}</div>
+                    <div class="hero-subtitle">{TAGLINE}</div>
+                </div>
+                <div class="hero-stats">
+                    <div class="hero-stat">
+                        <div class="hero-stat-number">{get_metrics()[0]}</div>
+                        <div class="hero-stat-label">Users</div>
+                    </div>
+                    <div class="hero-stat">
+                        <div class="hero-stat-number">{get_metrics()[1]}</div>
+                        <div class="hero-stat-label">Tools</div>
+                    </div>
+                    <div class="hero-stat">
+                        <div class="hero-stat-number">{get_metrics()[2]}</div>
+                        <div class="hero-stat-label">Bookings</div>
+                    </div>
+                    <div class="hero-stat">
+                        <div class="hero-stat-number">{get_metrics()[3]}</div>
+                        <div class="hero-stat-label">Reviews</div>
+                    </div>
+                </div>
             </div>
             """,
             unsafe_allow_html=True
         )
-        # Metrics row
-        try:
-            m_users, m_tools, m_bookings, m_reviews = get_metrics()
-            c1, c2, c3, c4 = st.columns(4)
-            with c1: st.metric("Users", m_users)
-            with c2: st.metric("Tools", m_tools)
-            with c3: st.metric("Bookings", m_bookings)
-            with c4: st.metric("Reviews", m_reviews)
-        except Exception as e:
-            st.warning(f"Metrics unavailable: {e}")
 
     # ===== Sidebar: auth + admin reset =====
     with st.sidebar:
@@ -813,3 +1330,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
