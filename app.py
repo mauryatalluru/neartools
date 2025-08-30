@@ -450,16 +450,17 @@ def inject_css():
         letter-spacing: 0.05em;
       }}
       
-      /* Enhanced Success/Error States */
-      .stSuccess {{
-        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%) !important;
-        border: 2px solid rgba(16, 185, 129, 0.3) !important;
-        border-radius: 12px !important;
-        color: #065f46 !important;
-        padding: 1rem !important;
-        backdrop-filter: blur(10px) !important;
-        animation: successPulse 0.6s ease-out !important;
-      }}
+             /* Enhanced Success/Error States */
+       .stSuccess {{
+         background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.1) 100%) !important;
+         border: 2px solid rgba(16, 185, 129, 0.4) !important;
+         border-radius: 12px !important;
+         color: #065f46 !important;
+         padding: 1rem !important;
+         backdrop-filter: blur(10px) !important;
+         animation: successPulse 0.6s ease-out !important;
+         font-weight: 600 !important;
+       }}
       
       .stError {{
         background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%) !important;
@@ -565,14 +566,52 @@ def inject_css():
         filter: contrast(1.4) brightness(1.15) saturate(1.3) !important;
       }}
       
-      /* Logo container styling - Clean and Simple */
-      .logo-container {{
-        background: transparent !important;
-        border-radius: 8px !important;
-        padding: 4px !important;
-      }}
-    </style>
-    """, unsafe_allow_html=True)
+             /* Logo container styling - Clean and Simple */
+       .logo-container {{
+         background: transparent !important;
+         border-radius: 8px !important;
+         padding: 4px !important;
+       }}
+       
+       /* Enhanced Your Listings Section - Better Contrast */
+       [data-testid="stContainer"] {{
+         background: rgba(255, 255, 255, 0.95) !important;
+         border: 2px solid rgba(102, 126, 234, 0.2) !important;
+         border-radius: 16px !important;
+         padding: 1.5rem !important;
+         margin: 1rem 0 !important;
+         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
+       }}
+       
+       /* Better text contrast for all content */
+       .stMarkdown p, .stMarkdown div {{
+         color: #1F2937 !important;
+       }}
+       
+       .stMarkdown strong {{
+         color: #000000 !important;
+         font-weight: 700 !important;
+       }}
+       
+       .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {{
+         color: #1F2937 !important;
+         font-weight: 700 !important;
+       }}
+       
+       /* Enhanced button contrast */
+       .stButton > button[data-testid="baseButton-secondary"] {{
+         background: linear-gradient(135deg, #6B7280 0%, #4B5563 100%) !important;
+         color: white !important;
+         border: 2px solid rgba(255, 255, 255, 0.2) !important;
+         font-weight: 600 !important;
+       }}
+       
+       .stButton > button[data-testid="baseButton-secondary"]:hover {{
+         background: linear-gradient(135deg, #4B5563 0%, #374151 100%) !important;
+         transform: translateY(-2px) !important;
+       }}
+     </style>
+     """, unsafe_allow_html=True)
 
 # ------------------ Config ------------------
 ADMIN_EMAIL = "your.email@example.com"   # set your admin email to see the reset button
@@ -1163,7 +1202,13 @@ def main():
 
     # -------- Browse --------
     with tab_browse:
-        st.subheader("Find tools near you")
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    color: white; padding: 1rem 1.5rem; border-radius: 12px; 
+                    margin: 0 0 1rem 0; text-align: center; box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);">
+            <h3 style="margin: 0; color: white; font-size: 1.5rem; font-weight: 700;">Find Tools Near You</h3>
+        </div>
+        """, unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns([2.6, 2, 2, 2.6])
         with c1:
             job_text = st.text_input("Describe your job (optional)",
@@ -1184,7 +1229,17 @@ def main():
                                              for tok in _tokenize(job_text))]
 
         if not tools:
-            st.info("No tools found. Try clearing filters or list your first tool.")
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); 
+                        border: 2px dashed rgba(102, 126, 234, 0.3); border-radius: 16px; 
+                        padding: 3rem 2rem; text-align: center; margin: 2rem 0;">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">🔍</div>
+                <h4 style="color: #374151; margin: 0 0 0.5rem 0; font-size: 1.25rem;">No Tools Found</h4>
+                <p style="color: #6B7280; margin: 0; font-size: 0.9rem;">
+                    Try clearing your filters or be the first to list a tool in your area!
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
         else:
             ranked = rank_tools(tools, job_text, d1 if d1 else None, d2 if d2 else None)
             for t, score, reasons in ranked:
@@ -1223,10 +1278,26 @@ def main():
 
     # -------- List a Tool (single-click, rerun-safe) --------
     with tab_list:
-        st.subheader("List a tool or appliance")
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    color: white; padding: 1rem 1.5rem; border-radius: 12px; 
+                    margin: 0 0 1rem 0; text-align: center; box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);">
+            <h3 style="margin: 0; color: white; font-size: 1.5rem; font-weight: 700;">List a Tool or Appliance</h3>
+        </div>
+        """, unsafe_allow_html=True)
 
         if not st.session_state.get("user"):
-            st.warning("Please log in to list a tool.")
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.1) 100%); 
+                        border: 2px dashed rgba(245, 158, 11, 0.3); border-radius: 16px; 
+                        padding: 3rem 2rem; text-align: center; margin: 2rem 0;">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">⚠️</div>
+                <h4 style="color: #92400e; margin: 0 0 0.5rem 0; font-size: 1.25rem;">Login Required</h4>
+                <p style="color: #B45309; margin: 0; font-size: 0.9rem;">
+                    Please log in to list your tools and start earning!
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
         else:
             # Reset submitting flag when form is loaded
             if "submitting" not in st.session_state:
@@ -1281,26 +1352,60 @@ def main():
                         st.error(f"❌ Couldn't publish: {e}")
                         st.session_state["submitting"] = False
 
-        st.markdown("### Your listings")
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    color: white; padding: 1rem 1.5rem; border-radius: 12px; 
+                    margin: 2rem 0 1rem 0; text-align: center; box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);">
+            <h3 style="margin: 0; color: white; font-size: 1.5rem; font-weight: 700;">Your Listings</h3>
+        </div>
+        """, unsafe_allow_html=True)
         if st.session_state.get("user"):
             my_tools = get_user_tools(st.session_state["user"]["id"])
             if not my_tools:
-                st.info("You haven't listed anything yet.")
+                st.markdown("""
+                <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); 
+                            border: 2px dashed rgba(102, 126, 234, 0.3); border-radius: 16px; 
+                            padding: 3rem 2rem; text-align: center; margin: 2rem 0;">
+                    <div style="font-size: 4rem; margin-bottom: 1rem;">🧰</div>
+                    <h4 style="color: #374151; margin: 0 0 0.5rem 0; font-size: 1.25rem;">No Tools Listed Yet</h4>
+                    <p style="color: #6B7280; margin: 0; font-size: 0.9rem;">
+                        Start sharing your tools with the community! List your first tool above.
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
             else:
                 for t in my_tools:
                     with st.container(border=True):
-                        cols = st.columns([1, 3, 1])
+                        cols = st.columns([1, 2, 1])
                         with cols[0]:
                             if t["image_path"] and os.path.exists(t["image_path"]):
-                                st.image(t["image_path"], width="stretch")
+                                st.image(t["image_path"], width=120)
                             else:
-                                st.write("🧰")
+                                st.markdown("""
+                                <div style="width: 120px; height: 90px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                                            border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 12px; 
+                                            display: flex; align-items: center; justify-content: center;
+                                            font-size: 2rem; color: white; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);">
+                                    🧰
+                                </div>
+                                """, unsafe_allow_html=True)
                         with cols[1]:
-                            st.write(f"**{t['name']}** — ${t['daily_price']:.2f}/day")
-                            st.caption((t["description"] or "")[:120])
-                            st.write(f"Availability: {t['available_from'] or '—'} → {t['available_to'] or '—'}")
+                            st.markdown(f"""
+                            <div style="padding: 0.5rem 0;">
+                                <h4 style="color: #1F2937; margin: 0 0 0.5rem 0; font-size: 1.1rem;">{t['name']}</h4>
+                                <p style="color: #6B7280; margin: 0 0 0.5rem 0; font-size: 0.9rem;">
+                                    <strong style="color: #059669;">${t['daily_price']:.2f}/day</strong>
+                                </p>
+                                <p style="color: #374151; margin: 0 0 0.5rem 0; font-size: 0.85rem; line-height: 1.4;">
+                                    {t["description"] or "No description available."}
+                                </p>
+                                <p style="color: #6B7280; margin: 0; font-size: 0.8rem;">
+                                    📅 Available: {t['available_from'] or 'Always'} → {t['available_to'] or 'Always'}
+                                </p>
+                            </div>
+                            """, unsafe_allow_html=True)
                         with cols[2]:
-                            if st.button("Delete", key=f"del_{t['id']}"):
+                            if st.button("🗑️ Delete", key=f"del_{t['id']}", type="secondary"):
                                 ok, msg = delete_tool(t["id"], st.session_state["user"]["id"])
                                 (st.success if ok else st.error)(msg)
                                 st.rerun()
@@ -1308,13 +1413,39 @@ def main():
 
     # -------- My Bookings --------
     with tab_book:
-        st.subheader("Your bookings")
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    color: white; padding: 1rem 1.5rem; border-radius: 12px; 
+                    margin: 0 0 1rem 0; text-align: center; box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);">
+            <h3 style="margin: 0; color: white; font-size: 1.5rem; font-weight: 700;">Your Bookings</h3>
+        </div>
+        """, unsafe_allow_html=True)
         if not st.session_state.get("user"):
-            st.info("Log in to view bookings.")
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); 
+                        border: 2px dashed rgba(102, 126, 234, 0.3); border-radius: 16px; 
+                        padding: 3rem 2rem; text-align: center; margin: 2rem 0;">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">🔐</div>
+                <h4 style="color: #374151; margin: 0 0 0.5rem 0; font-size: 1.25rem;">Login Required</h4>
+                <p style="color: #6B7280; margin: 0; font-size: 0.9rem;">
+                    Please log in to view and manage your bookings.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
         else:
             rows = get_user_bookings(st.session_state["user"]["id"])
             if not rows:
-                st.info("No bookings yet.")
+                st.markdown("""
+                <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); 
+                            border: 2px dashed rgba(102, 126, 234, 0.3); border-radius: 16px; 
+                            padding: 3rem 2rem; text-align: center; margin: 2rem 0;">
+                    <div style="font-size: 4rem; margin-bottom: 1rem;">📅</div>
+                    <h4 style="color: #374151; margin: 0 0 0.5rem 0; font-size: 1.25rem;">No Bookings Yet</h4>
+                    <p style="color: #6B7280; margin: 0; font-size: 0.9rem;">
+                        Start browsing tools and make your first booking!
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
             else:
                 for b in rows:
                     with st.container(border=True):
