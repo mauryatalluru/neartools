@@ -328,6 +328,31 @@ def inject_css():
         to {{ width: 20px; opacity: 1; }}
       }}
       
+      /* Better contrast for expanders and captions */
+      .streamlit-expanderHeader {{
+        background: rgba(255, 255, 255, 0.95) !important;
+        color: #1F2937 !important;
+        border: 1px solid rgba(0, 0, 0, 0.1) !important;
+        border-radius: 8px !important;
+        padding: 0.75rem 1rem !important;
+        font-weight: 600 !important;
+        margin-bottom: 0.5rem !important;
+      }}
+      
+      .streamlit-expanderHeader:hover {{
+        background: rgba(255, 255, 255, 1) !important;
+        border-color: #667eea !important;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15) !important;
+      }}
+      
+      .streamlit-expanderContent {{
+        background: rgba(255, 255, 255, 0.9) !important;
+        border: 1px solid rgba(0, 0, 0, 0.05) !important;
+        border-radius: 8px !important;
+        padding: 1rem !important;
+        margin-top: 0.5rem !important;
+      }}
+      
       /* Professional Sidebar */
       [data-testid="stSidebar"] {{
         background: linear-gradient(180deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%) !important;
@@ -841,6 +866,23 @@ def get_user_bookings(user_id: int) -> List[sqlite3.Row]:
     finally:
         conn.close()
 
+def get_tool_bookings(tool_id: int) -> List[sqlite3.Row]:
+    """Get all bookings for a specific tool, including borrower details"""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT b.*, u.name AS borrower_name, u.email AS borrower_email
+            FROM bookings b JOIN users u ON u.id=b.borrower_id
+            WHERE b.tool_id=?
+            ORDER BY b.created_at DESC
+            """,
+            (tool_id,),
+        ).fetchall()
+        return rows
+    finally:
+        conn.close()
+
 def cancel_booking(booking_id: int, user_id: int) -> Tuple[bool, str]:
     conn = get_conn()
     try:
@@ -1133,7 +1175,13 @@ def main():
         st.header("Account")
 
         if st.session_state.get("user"):
-            st.success(f"Logged in as {st.session_state['user']['name']}")
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); 
+                        color: white; padding: 0.75rem 1rem; border-radius: 8px; 
+                        margin: 0.5rem 0; text-align: center; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                <strong style="color: white; font-size: 1rem;">✅ Logged in as {st.session_state['user']['name']}</strong>
+            </div>
+            """, unsafe_allow_html=True)
             if st.button("Log out", key="logout_btn"):
                 st.session_state.pop("user", None)
                 if cookies_ready:
@@ -1198,7 +1246,7 @@ def main():
                     st.error(f"Could not reset DB: {e}")
 
     # ===== Tabs =====
-    tab_browse, tab_list, tab_book = st.tabs(["Browse", "List a Tool", "My Bookings"])
+    tab_browse, tab_list, tab_book, tab_my_tool_bookings = st.tabs(["Browse", "List a Tool", "My Bookings", "My Tool Bookings"])
 
     # -------- Browse --------
     with tab_browse:
@@ -1248,20 +1296,39 @@ def main():
                 df_reviews = get_tool_reviews(t["id"])
                 with st.expander(f"Reviews ({len(df_reviews)})"):
                     if df_reviews.empty:
-                        st.write("No reviews yet.")
+                        st.markdown("""
+                        <div style="background: rgba(255, 255, 255, 0.95); 
+                                    color: #6B7280; padding: 1rem; border-radius: 8px; 
+                                    margin: 0.5rem 0; border: 1px dashed rgba(107, 114, 128, 0.3); 
+                                    text-align: center;">
+                            <div style="font-size: 2rem; margin-bottom: 0.5rem;">📝</div>
+                            <p style="margin: 0; color: #374151; font-weight: 500;">No reviews yet</p>
+                        </div>
+                        """, unsafe_allow_html=True)
                     else:
                         for _, r in df_reviews.iterrows():
-                            st.write(f"**{int(r['rating'])}⭐** · by {r['reviewer']} · {r['created_at']}")
-                            if r["comment"]:
-                                st.write(r["comment"])
-                            st.markdown("---")
+                            st.markdown(f"""
+                            <div style="background: rgba(255, 255, 255, 0.9); 
+                                        color: #1F2937; padding: 0.75rem; border-radius: 6px; 
+                                        margin: 0.5rem 0; border: 1px solid rgba(0, 0, 0, 0.05);">
+                                                                 <strong style="color: #1F2937;">{int(r['rating'])}⭐</strong> · by <strong style="color: #374151;">{r['reviewer']}</strong> · <span style="color: #6B7280;">{datetime.fromisoformat(r['created_at'].replace('Z', '+00:00')).strftime('%Y-%m-%d')}</span>
+                                {f'<br><div style="margin-top: 0.5rem; color: #374151; font-style: italic;">{r["comment"]}</div>' if r["comment"] else ''}
+                            </div>
+                            """, unsafe_allow_html=True)
 
                 if d1 and d2:
                     ok = score >= 0 and is_available(t, d1, d2)
                     st.write("Availability:", "✅ Available" if ok else "❌ Not available")
 
                 if reasons:
-                    st.caption("Why this result: " + " • ".join(reasons[:4]))
+                    st.markdown(f"""
+                    <div style="background: rgba(255, 255, 255, 0.95); 
+                                color: #1F2937; padding: 0.75rem 1rem; border-radius: 8px; 
+                                margin: 0.5rem 0; border: 1px solid rgba(0, 0, 0, 0.1); 
+                                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
+                        <strong style="color: #374151;">Why this result:</strong> {" • ".join(reasons[:4])}
+                    </div>
+                    """, unsafe_allow_html=True)
 
                 if st.session_state.get("user") and d1 and d2:
                     days = (d2 - d1).days + 1
@@ -1469,6 +1536,101 @@ def main():
                             if st.button("Submit review", key=f"rvb_{b['id']}"):
                                 add_review(b["tool_id"], st.session_state["user"]["id"], rating, comment)
                                 st.success("Thanks! Review added.")
+
+    # -------- My Tool Bookings (for lenders) --------
+    with tab_my_tool_bookings:
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    color: white; padding: 1rem 1.5rem; border-radius: 12px; 
+                    margin: 0 0 1rem 0; text-align: center; box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);">
+            <h3 style="margin: 0; color: white; font-size: 1.5rem; font-weight: 700;">Bookings for My Tools</h3>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not st.session_state.get("user"):
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); 
+                        border: 2px dashed rgba(102, 126, 234, 0.3); border-radius: 16px; 
+                        padding: 3rem 2rem; text-align: center; margin: 2rem 0;">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">🔐</div>
+                <h4 style="color: #374151; margin: 0 0 0.5rem 0; font-size: 1.25rem;">Login Required</h4>
+                <p style="color: #6B7280; margin: 0; font-size: 0.9rem;">
+                    Please log in to view bookings for your tools.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            user_id = st.session_state["user"]["id"]
+            my_tools = get_user_tools(user_id)  # Reuse existing function to get tools owned by user
+
+            if not my_tools:
+                st.markdown("""
+                <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); 
+                            border: 2px dashed rgba(102, 126, 234, 0.3); border-radius: 16px; 
+                            padding: 3rem 2rem; text-align: center; margin: 2rem 0;">
+                    <div style="font-size: 4rem; margin-bottom: 1rem;">🛠️</div>
+                    <h4 style="color: #374151; margin: 0 0 0.5rem 0; font-size: 1.25rem;">No Tools Listed Yet</h4>
+                    <p style="color: #6B7280; margin: 0; font-size: 0.9rem;">
+                        You haven't listed any tools, so there are no bookings to display.
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                all_tool_bookings = []
+                for tool in my_tools:
+                    bookings = get_tool_bookings(tool["id"])
+                    if bookings:
+                        for booking in bookings:
+                            all_tool_bookings.append({
+                                "tool_name": tool["name"],
+                                "tool_image": tool["image_path"],
+                                "borrower_name": booking["borrower_name"],
+                                "borrower_email": booking["borrower_email"],
+                                "start_date": booking["start_date"],
+                                "end_date": booking["end_date"],
+                                "total_cost": booking["total_cost"],
+                                "created_at": booking["created_at"]
+                            })
+
+                if not all_tool_bookings:
+                    st.markdown("""
+                    <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); 
+                                border: 2px dashed rgba(102, 126, 234, 0.3); border-radius: 16px; 
+                                padding: 3rem 2rem; text-align: center; margin: 2rem 0;">
+                        <div style="font-size: 4rem; margin-bottom: 1rem;">🗓️</div>
+                        <h4 style="color: #374151; margin: 0 0 0.5rem 0; font-size: 1.25rem;">No Bookings for Your Tools</h4>
+                        <p style="color: #6B7280; margin: 0; font-size: 0.9rem;">
+                            Your listed tools haven't been booked yet. Share them more to get rentals!
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    for booking in all_tool_bookings:
+                        with st.container(border=True):
+                            cols = st.columns([1, 3])
+                            with cols[0]:
+                                if booking["tool_image"] and os.path.exists(booking["tool_image"]):
+                                    st.image(booking["tool_image"], width="stretch")
+                                else:
+                                    st.write("🧰")
+                            with cols[1]:
+                                st.markdown(f"""
+                                    <div style="color: #1F2937; font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">
+                                        {booking['tool_name']}
+                                    </div>
+                                    <div style="color: #374151; font-size: 0.95rem; margin-bottom: 0.3rem;">
+                                        Booked by: <span style="font-weight: 600;">{booking['borrower_name']}</span> ({booking['borrower_email']})
+                                    </div>
+                                    <div style="color: #374151; font-size: 0.9rem; margin-bottom: 0.3rem;">
+                                        Dates: {booking['start_date']} to {booking['end_date']}
+                                    </div>
+                                    <div style="color: #374151; font-size: 0.9rem;">
+                                        Total Price: <span style="font-weight: 600;">${booking['total_cost']:.2f}</span>
+                                    </div>
+                                                                         <div style="color: #6B7280; font-size: 0.8rem; margin-top: 0.5rem;">
+                                         Booked on: {datetime.fromisoformat(booking['created_at'].replace('Z', '+00:00')).strftime('%Y-%m-%d')}
+                                     </div>
+                                """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
