@@ -11,7 +11,7 @@ import os
 import re
 import hashlib
 import sqlite3
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List, Tuple
 
 import streamlit as st
@@ -179,7 +179,7 @@ def create_user(name: str, email: str, password: str, location: str = "") -> Tup
         with conn:
             conn.execute(
                 "INSERT INTO users(name, email, password_hash, location, created_at) VALUES(?,?,?,?,?)",
-                (name.strip(), email.lower().strip(), hash_password(password), location.strip(), datetime.utcnow().isoformat()),
+                (name.strip(), email.lower().strip(), hash_password(password), location.strip(), datetime.now(timezone.utc).isoformat()),
             )
         return True, "Account created! You can log in now."
     except sqlite3.IntegrityError:
@@ -210,7 +210,7 @@ def add_tool(owner_id: int, name: str, description: str, category: str, daily_pr
              image_bytes: Optional[bytes]) -> int:
     image_path = None
     if image_bytes:
-        fname = f"tool_{owner_id}_{int(datetime.utcnow().timestamp())}.jpg"
+        fname = f"tool_{owner_id}_{int(datetime.now(timezone.utc).timestamp())}.jpg"
         image_path = os.path.join(IMAGES_DIR, fname)
         with open(image_path, "wb") as f:
             f.write(image_bytes)
@@ -227,7 +227,7 @@ def add_tool(owner_id: int, name: str, description: str, category: str, daily_pr
                 float(daily_price), location.strip(),
                 available_from.isoformat() if available_from else None,
                 available_to.isoformat() if available_to else None,
-                image_path, datetime.utcnow().isoformat(),
+                image_path, datetime.now(timezone.utc).isoformat(),
             ),
         )
         tool_id = cur.lastrowid
@@ -301,7 +301,7 @@ def create_booking(tool: sqlite3.Row, borrower_id: int, start: date, end: date) 
             INSERT INTO bookings(tool_id, borrower_id, start_date, end_date, total_cost, status, created_at)
             VALUES(?,?,?,?,?,?,?)
             """,
-            (tool["id"], borrower_id, start.isoformat(), end.isoformat(), total_cost, "confirmed", datetime.utcnow().isoformat()),
+            (tool["id"], borrower_id, start.isoformat(), end.isoformat(), total_cost, "confirmed", datetime.now(timezone.utc).isoformat()),
         )
     conn.close()
     return True, f"Booking confirmed for {days} day(s) — total ${total_cost:.2f}."
@@ -374,8 +374,8 @@ def add_review(tool_id: int, reviewer_id: int, rating: int, comment: str) -> Non
     conn = get_conn()
     with conn:
         conn.execute(
-            "INSERT INTO reviews(tool_id, reviewer_id, rating, comment, created_at) VALUES(?,?,?,?,?)",
-            (tool_id, reviewer_id, int(rating), (comment or "").strip(), datetime.utcnow().isoformat()),
+                    "INSERT INTO reviews(tool_id, reviewer_id, rating, comment, created_at) VALUES(?,?,?,?,?)",
+        (tool_id, reviewer_id, int(rating), (comment or "").strip(), datetime.now(timezone.utc).isoformat()),
         )
     conn.close()
 
@@ -439,7 +439,7 @@ def _avg_rating_and_count(tool_id: int) -> tuple[float, int]:
 def _recent_bookings_count(tool_id: int, days: int = 90) -> int:
     conn = get_conn()
     try:
-        cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         row = conn.execute(
             "SELECT COUNT(*) AS c FROM bookings WHERE tool_id=? AND created_at >= ?",
             (tool_id, cutoff),
@@ -498,7 +498,7 @@ def tool_card(tool: sqlite3.Row):
         c0, c1, c2 = st.columns([1, 2, 2])
         with c0:
             if tool["image_path"] and os.path.exists(tool["image_path"]):
-                st.image(tool["image_path"], use_container_width=True)
+                st.image(tool["image_path"], width="stretch")
             else:
                 st.write("🧰")
         with c1:
@@ -545,7 +545,7 @@ def main():
     col_logo, col_main = st.columns([1, 6], vertical_alignment="center")
     with col_logo:
         if os.path.exists("logo.png"):
-            st.image("logo.png", use_container_width=True)
+            st.image("logo.png", width="stretch")
         else:
             st.write("🧰")
     with col_main:
@@ -572,7 +572,7 @@ def main():
     # ===== Sidebar: auth + admin reset =====
     with st.sidebar:
         if os.path.exists("logo.png"):
-            st.image("logo.png", use_container_width=True)
+            st.image("logo.png", width="stretch")
         st.markdown("### Own less. Do more.")
         st.header("Account")
 
@@ -711,25 +711,6 @@ def main():
         if not st.session_state.get("user"):
             st.warning("Please log in to list a tool.")
         else:
-            # (A) If we have a pending submission from the previous run, write it now
-            if st.session_state.get("pending_listing"):
-                payload = st.session_state.pop("pending_listing")
-                try:
-                    _id = add_tool(
-                        st.session_state["user"]["id"],
-                        payload["name"],
-                        payload["desc"],
-                        payload["cat"],
-                        payload["price"],
-                        payload["loc"],
-                        payload["afrom"],
-                        payload["ato"],
-                        payload["img_bytes"],
-                    )
-                    st.success(f"Listed! Your tool ID is {_id}.")
-                except Exception as e:
-                    st.error(f"Couldn't publish: {e}")
-
             # (B) Render the form
             with st.form(key="list_form_streamlit_cloud_safe", clear_on_submit=True):
                 name  = st.text_input("Tool name *", placeholder="e.g., Hammer Drill")
@@ -742,7 +723,7 @@ def main():
                 img   = st.file_uploader("Photo (JPG/PNG)", type=["jpg", "jpeg", "png"])
                 submitted = st.form_submit_button("Publish listing")
 
-            # (C) On click → validate → STASH data in session → RERUN
+            # (C) Handle form submission directly
             if submitted:
                 problems = []
                 if not name: problems.append("Tool name")
@@ -756,17 +737,21 @@ def main():
                 if problems:
                     st.error("Please fill: " + ", ".join(problems))
                 else:
-                    st.session_state["pending_listing"] = {
-                        "name": name.strip(),
-                        "desc": (desc or "").strip(),
-                        "cat":  (cat or "").strip(),
-                        "price": float(price),
-                        "loc":  loc.strip(),
-                        "afrom": afrom or None,
-                        "ato":   ato or None,
-                        "img_bytes": (img.read() if img else None),
-                    }
-                st.rerun()  # next run will hit (A) and write once
+                    try:
+                        _id = add_tool(
+                            st.session_state["user"]["id"],
+                            name.strip(),
+                            (desc or "").strip(),
+                            (cat or "").strip(),
+                            float(price),
+                            loc.strip(),
+                            afrom or None,
+                            ato or None,
+                            (img.read() if img else None),
+                        )
+                        st.success(f"Listed! Your tool ID is {_id}.")
+                    except Exception as e:
+                        st.error(f"Couldn't publish: {e}")
 
         st.markdown("### Your listings")
         if st.session_state.get("user"):
@@ -779,7 +764,7 @@ def main():
                         cols = st.columns([1, 3, 1])
                         with cols[0]:
                             if t["image_path"] and os.path.exists(t["image_path"]):
-                                st.image(t["image_path"], use_container_width=True)
+                                st.image(t["image_path"], width="stretch")
                             else:
                                 st.write("🧰")
                         with cols[1]:
